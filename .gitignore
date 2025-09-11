@@ -1,0 +1,10 @@
+data/
+checkpoints/
+logs/
+wandb/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pyw
+*.pyz
