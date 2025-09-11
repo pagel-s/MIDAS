@@ -17,8 +17,13 @@ from rdkit.Chem import rdMolDescriptors
 from rdkit.Chem import QED
 
 
-def calculate_properties(smiles):
-    """Calculate a set of pharmacophoric properties for a given molecule."""
+def calculate_properties(smiles: str) -> dict:
+    """Calculate a set of pharmacophoric properties for a given molecule.
+    Args:
+        smiles (str): SMILES string of the molecule.
+    Returns:
+        dict: A dictionary containing the calculated properties.
+    """
     properties = {}
     mol = Chem.MolFromSmiles(smiles)
     properties["MW"] = round(Descriptors.MolWt(mol), 2)
