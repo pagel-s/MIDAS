@@ -8,7 +8,18 @@ import argparse
 import pubchempy as pcp
 
 
-def pubchem_similarity_search(smiles, num_results=10, threshold=10):
+def pubchem_similarity_search(smiles: str, num_results: int = 10, threshold: int = 10):
+    """
+    Perform a similarity search in PubChem using a SMILES string.
+
+    Args:
+        smiles (str): The SMILES string of the query molecule.
+        num_results (int): The maximum number of similar compounds to return.
+        threshold (int): Similarity threshold (0-100).
+
+    Returns:
+        list: A list of PubChem CIDs for similar compounds.
+    """
     url = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/fastsimilarity_2d/smiles/{smiles}/cids/JSON?Threshold={threshold}&MaxRecords={num_results}"
     response = requests.get(url)
     if response.status_code == 200:
@@ -17,7 +28,15 @@ def pubchem_similarity_search(smiles, num_results=10, threshold=10):
         return cids
     return []
 
-def cids_to_inchi(cids):
+def cids_to_inchi(cids: list) -> list:
+    """
+    Convert a list of PubChem CIDs to InChI strings.
+
+    Args:
+        cids (list): List of PubChem CIDs.
+    Returns:
+        list: List of InChI strings corresponding to the CIDs.
+    """
     inchi_list = []
     for cid in cids:
         compound = pcp.Compound.from_cid(cid)
