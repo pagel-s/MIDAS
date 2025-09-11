@@ -118,9 +118,13 @@ def describe_pharmacophores_llm(counts: Dict[str, int], client: Optional[object]
     #     "in qualitative terms for a generation model. Avoid listing raw counts; translate into phrases like 'multiple hydrogen-bond donors', 'aromatic character', 'hydrophobic regions'."
     # )
     # user_msg = f"Pharmacophore counts (family:count): {pharm_str}"
+    
+    import random
+    opener = ["Design", "Target", "Prioritize", "Seek", "Synthesize", "Aim for", "Generate", "A", "Generate a molecule with"]
+    shuffled_opener = random.shuffle(opener)
     system_msg = (
     "As a medicinal chemist, describe the molecule's pharmacophore profile in one concise, qualitative sentence. "
-    "Use phrases like 'multiple hydrogen-bond donors', 'aromatic character', and 'hydrophobic regions' instead of numerical counts."
+    "Use phrases like 'multiple hydrogen-bond donors', 'aromatic character', and 'hydrophobic regions' instead of numerical counts. Use the opener: {shuffled_opener} Choose a opener randomly and vary the style of the generated description"
 )
     user_msg = f"Pharmacophore counts (family:count): {pharm_str}"
     try:
@@ -149,9 +153,14 @@ def describe_physchem_llm(props: Dict[str, float], client: Optional[object], mod
     #     "Do not repeat exact numbers; map them to qualitative aims (e.g., 'moderate lipophilicity', 'low polar surface area', 'few rotors')."
     # )
     # user_msg = f"Properties: {kv}"
+        
+    import random
+    opener = ["Design", "Target", "Prioritize", "Seek", "Synthesize", "Aim for", "Generate", "A", "Generate a molecule with"]
+    shuffled_opener = random.shuffle(opener)
+    
     system_msg = (
     "You are a medicinal chemist. Generate a single, prescriptive sentence guiding an AI molecule generator on the desired physicochemical profile. "
-    "Replace specific numerical values with qualitative descriptions, e.g., 'moderate lipophilicity', 'low polar surface area', 'limited rotatable bonds'."
+    "Replace specific numerical values with qualitative descriptions, e.g., 'moderate lipophilicity', 'low polar surface area', 'limited rotatable bonds' . Use the opener: {shuffled_opener} Choose a opener randomly and vary the style of the generated description."
 )
     user_msg = f"Properties: {kv}"
     try:
@@ -194,12 +203,17 @@ def describe_fgs_human_like(fg_names: List[str], client: Optional[object], model
     #     "Functional groups to include/emphasize: " + ", ".join(fg_names) + ".\n"
     #     "Write a request that specifies these features in a plausible small-molecule design."
     # )
+    
+    import random
+    opener = ["Design", "Target", "Prioritize", "Seek", "Synthesize", "Aim for", "Generate", "A", "Generate a molecule with"]
+    shuffled_opener = random.shuffle(opener)
+    
     system_msg = (
         "You are a senior medicinal chemist instructing a generative AI for de novo design. "
         "Based on provided functional groups, write a concise, prescriptive request (1-3 sentences) for the desired molecule. "
         "Incorporate medicinal chemistry concepts (polarity, ionization, aromaticity). "
         "Vary language and structure for each output; avoid repetition. "
-        "Do not use 'We' or 'We want'. Begin with action verbs such as: 'Design', 'Target', 'Prioritize', 'Seek', 'Synthesize', 'Aim for', 'Generate."
+        f"Do not use 'We' or 'We want'. Begin with action verbs such as: {shuffled_opener}. . Choose a opener randomly and vary the style of the generated description"
     )
     user_msg = (
         "Functional groups to include/emphasize: " + ", ".join(fg_names) + ".\n"
@@ -223,12 +237,15 @@ def describe_fgs_human_like(fg_names: List[str], client: Optional[object], model
 def describe_with_llm(smiles: str, client: Optional[object], model: str) -> str:
     if client is None:
         return ""
+    import random
+    opener = ["Design", "Target", "Prioritize", "Seek", "Synthesize", "Aim for", "Generate", "A", "Generate a molecule with"]
+    shuffled_opener = random.shuffle(opener)
     prompt = (
         "You are a senior medicinal chemist specifying a target for de novo generation. "
-        "Given the SMILES provided, write a prescriptive request (1-3 sentences) for a molecule to generate, "
+        "Given the SMILES provided, write a prescriptive request (1-3 sentences) for a molecule to generate in a diverse style, "
         "capturing its salient features (functional groups, pharmacophores, polarity, aromaticity, charge) in med-chem language. "
-        "Vary tone and phrasing; avoid starting with 'We' or 'We want'. Prefer openers like 'Design', 'Target', 'Prioritize', 'Seek', 'Synthesize', 'Aim for'. "
-        "Do not echo the SMILES; avoid analysis phrasing. Never mention the reference molecule explicitly, but generate a molecule that is similar to the reference molecule.\n\n"
+        f"Vary tone and phrasing; avoid starting with 'We' or 'We want'. Prefer openers like {shuffled_opener}. "
+        "Do not echo the SMILES; avoid analysis phrasing. Never mention the reference molecule explicitly, but generate a molecule that is similar to the reference molecule. Choose a opener randomly and vary the style of the generated description.\n\n"
         f"Reference SMILES: {smiles}\n"
     )
     try:
@@ -284,13 +301,17 @@ def describe_with_llm_augmented(
     fsp3 = _fmt('fSP3')
     chg = int(_fmt('FormalCharge'))
 
+    import random
+    opener = ["Design", "Target", "Prioritize", "Seek", "Synthesize", "Aim for", "Generate", "A", "Generate a molecule with"]
+    shuffled_opener = random.shuffle(opener)
+
     system_msg = (
         "You are a senior medicinal chemist specifying a target for a de novo "
         "molecule generator. Write a brief (1-3 sentences), prescriptive request "
         "that a language model would use to generate a molecule. Use med-chem language "
         "(pharmacophores, polarity, aromaticity, ionization). Vary tone; avoid formulaic phrasing. "
         "Avoid analysis phrasing. Do not echo raw numbers verbatim; instead translate them into qualitative aims. "
-        "Avoid starting with 'We' or 'We want'. Prefer openers like 'Design', 'Target', 'Prioritize', 'Seek', 'Synthesize', 'Aim for'."
+        f"Avoid starting with 'We' or 'We want'. Prefer openers like {shuffled_opener}. Choose a opener randomly and vary the style of the generated description."
     )
 
     user_msg = (
@@ -441,7 +462,7 @@ def main():
 
     out_csv = args.out_csv or Path(args.data_root, "descriptions.csv")
 
-    sdf_paths = gather_sdf_paths(args.data_root)
+    sdf_paths = gather_sdf_paths(args.data_root)[:5]
 
     out_csv.parent.mkdir(parents=True, exist_ok=True)
     with open(out_csv, "w", newline="") as f:
