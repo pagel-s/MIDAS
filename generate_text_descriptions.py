@@ -11,6 +11,7 @@ from rdkit.Chem import Descriptors, Crippen, rdMolDescriptors as rdMD, rdmolops
 from rdkit.Chem import ChemicalFeatures
 from rdkit import RDConfig
 import exmol
+import random
 
 try:
     from openai import OpenAI
@@ -120,11 +121,52 @@ def describe_pharmacophores_llm(counts: Dict[str, int], client: Optional[object]
     # user_msg = f"Pharmacophore counts (family:count): {pharm_str}"
     
     import random
-    opener = ["Design", "Target", "Prioritize", "Seek", "Synthesize", "Aim for", "Generate", "A", "Generate a molecule with"]
-    shuffled_opener = random.shuffle(opener)
+    opener = [
+        "Design",
+        "Target",
+        "Prioritize",
+        "Seek",
+        "Synthesize",
+        "Aim for",
+        "Generate",
+        "A",
+        "Generate a molecule with",
+        "Create",
+        "Construct",
+        "Devise",
+        "Produce",
+        "Assemble",
+        "Formulate",
+        "Invent",
+        "Compose",
+        "Engineer",
+        "Draft",
+        "Model",
+        "Simulate",
+        "Propose",
+        "Derive",
+        "Fabricate",
+        "Conceive",
+        "Iteratively generate",
+        "Augment",
+        "Mutate",
+        "Explore",
+        "Optimize generation of",
+        "Generate variations of",
+        "Generate candidates for",
+        "Expand",
+        "Refine generated",
+        "Transform",
+        "Generate analogs of",
+        "Generate potential",
+        "Generate configurations of",
+        "Automate generation of"
+    ]
+    random.shuffle(opener)
+
     system_msg = (
     "As a medicinal chemist, describe the molecule's pharmacophore profile in one concise, qualitative sentence. "
-    "Use phrases like 'multiple hydrogen-bond donors', 'aromatic character', and 'hydrophobic regions' instead of numerical counts. Use the opener: {shuffled_opener} Choose a opener randomly and vary the style of the generated description"
+    f"Use phrases like 'multiple hydrogen-bond donors', 'aromatic character', and 'hydrophobic regions' instead of numerical counts.  Use an opener inspired by: {opener}."
 )
     user_msg = f"Pharmacophore counts (family:count): {pharm_str}"
     try:
@@ -155,12 +197,52 @@ def describe_physchem_llm(props: Dict[str, float], client: Optional[object], mod
     # user_msg = f"Properties: {kv}"
         
     import random
-    opener = ["Design", "Target", "Prioritize", "Seek", "Synthesize", "Aim for", "Generate", "A", "Generate a molecule with"]
-    shuffled_opener = random.shuffle(opener)
-    
+    opener = [
+        "Design",
+        "Target",
+        "Prioritize",
+        "Seek",
+        "Synthesize",
+        "Aim for",
+        "Generate",
+        "A",
+        "Generate a molecule with",
+        "Create",
+        "Construct",
+        "Devise",
+        "Produce",
+        "Assemble",
+        "Formulate",
+        "Invent",
+        "Compose",
+        "Engineer",
+        "Draft",
+        "Model",
+        "Simulate",
+        "Propose",
+        "Derive",
+        "Fabricate",
+        "Conceive",
+        "Iteratively generate",
+        "Augment",
+        "Mutate",
+        "Explore",
+        "Optimize generation of",
+        "Generate variations of",
+        "Generate candidates for",
+        "Expand",
+        "Refine generated",
+        "Transform",
+        "Generate analogs of",
+        "Generate potential",
+        "Generate configurations of",
+        "Automate generation of"
+    ]
+    random.shuffle(opener)
+
     system_msg = (
     "You are a medicinal chemist. Generate a single, prescriptive sentence guiding an AI molecule generator on the desired physicochemical profile. "
-    "Replace specific numerical values with qualitative descriptions, e.g., 'moderate lipophilicity', 'low polar surface area', 'limited rotatable bonds' . Use the opener: {shuffled_opener} Choose a opener randomly and vary the style of the generated description."
+    f"Replace specific numerical values with qualitative descriptions, e.g., 'moderate lipophilicity', 'low polar surface area', 'limited rotatable bonds' . Use an opener inspired by: {opener}."
 )
     user_msg = f"Properties: {kv}"
     try:
@@ -170,7 +252,7 @@ def describe_physchem_llm(props: Dict[str, float], client: Optional[object], mod
                 {"role": "system", "content": system_msg},
                 {"role": "user", "content": user_msg},
             ],
-            temperature=0.6,
+            temperature=0.8,
             max_tokens=120,
         )
         return resp.choices[0].message.content.strip()
@@ -205,15 +287,55 @@ def describe_fgs_human_like(fg_names: List[str], client: Optional[object], model
     # )
     
     import random
-    opener = ["Design", "Target", "Prioritize", "Seek", "Synthesize", "Aim for", "Generate", "A", "Generate a molecule with"]
-    shuffled_opener = random.shuffle(opener)
+    opener = [
+        "Design",
+        "Target",
+        "Prioritize",
+        "Seek",
+        "Synthesize",
+        "Aim for",
+        "Generate",
+        "A",
+        "Generate a molecule with",
+        "Create",
+        "Construct",
+        "Devise",
+        "Produce",
+        "Assemble",
+        "Formulate",
+        "Invent",
+        "Compose",
+        "Engineer",
+        "Draft",
+        "Model",
+        "Simulate",
+        "Propose",
+        "Derive",
+        "Fabricate",
+        "Conceive",
+        "Iteratively generate",
+        "Augment",
+        "Mutate",
+        "Explore",
+        "Optimize generation of",
+        "Generate variations of",
+        "Generate candidates for",
+        "Expand",
+        "Refine generated",
+        "Transform",
+        "Generate analogs of",
+        "Generate potential",
+        "Generate configurations of",
+        "Automate generation of"
+    ]
+    random.shuffle(opener)
     
     system_msg = (
         "You are a senior medicinal chemist instructing a generative AI for de novo design. "
         "Based on provided functional groups, write a concise, prescriptive request (1-3 sentences) for the desired molecule. "
         "Incorporate medicinal chemistry concepts (polarity, ionization, aromaticity). "
         "Vary language and structure for each output; avoid repetition. "
-        f"Do not use 'We' or 'We want'. Begin with action verbs such as: {shuffled_opener}. . Choose a opener randomly and vary the style of the generated description"
+        f"Do not use 'We' or 'We want'.  Use an opener inspired by: {opener}"
     )
     user_msg = (
         "Functional groups to include/emphasize: " + ", ".join(fg_names) + ".\n"
@@ -226,7 +348,7 @@ def describe_fgs_human_like(fg_names: List[str], client: Optional[object], model
                 {"role": "system", "content": system_msg},
                 {"role": "user", "content": user_msg},
             ],
-            temperature=0.6,
+            temperature=0.8,
             max_tokens=240,
         )
         return resp.choices[0].message.content.strip()
@@ -238,21 +360,61 @@ def describe_with_llm(smiles: str, client: Optional[object], model: str) -> str:
     if client is None:
         return ""
     import random
-    opener = ["Design", "Target", "Prioritize", "Seek", "Synthesize", "Aim for", "Generate", "A", "Generate a molecule with"]
-    shuffled_opener = random.shuffle(opener)
+    opener = [
+        "Design",
+        "Target",
+        "Prioritize",
+        "Seek",
+        "Synthesize",
+        "Aim for",
+        "Generate",
+        "A",
+        "Generate a molecule with",
+        "Create",
+        "Construct",
+        "Devise",
+        "Produce",
+        "Assemble",
+        "Formulate",
+        "Invent",
+        "Compose",
+        "Engineer",
+        "Draft",
+        "Model",
+        "Simulate",
+        "Propose",
+        "Derive",
+        "Fabricate",
+        "Conceive",
+        "Iteratively generate",
+        "Augment",
+        "Mutate",
+        "Explore",
+        "Optimize generation of",
+        "Generate variations of",
+        "Generate candidates for",
+        "Expand",
+        "Refine generated",
+        "Transform",
+        "Generate analogs of",
+        "Generate potential",
+        "Generate configurations of",
+        "Automate generation of"
+    ]    
+    random.shuffle(opener)
     prompt = (
         "You are a senior medicinal chemist specifying a target for de novo generation. "
         "Given the SMILES provided, write a prescriptive request (1-3 sentences) for a molecule to generate in a diverse style, "
         "capturing its salient features (functional groups, pharmacophores, polarity, aromaticity, charge) in med-chem language. "
-        f"Vary tone and phrasing; avoid starting with 'We' or 'We want'. Prefer openers like {shuffled_opener}. "
-        "Do not echo the SMILES; avoid analysis phrasing. Never mention the reference molecule explicitly, but generate a molecule that is similar to the reference molecule. Choose a opener randomly and vary the style of the generated description.\n\n"
+        f"Vary tone and phrasing; avoid starting with 'We' or 'We want'.  Use an opener inspired by: {opener}. "
+        "Do not echo the SMILES; avoid analysis phrasing. Never mention the reference molecule explicitly, but generate a description for a molecule that is similar to the reference molecule.\n\n"
         f"Reference SMILES: {smiles}\n"
     )
     try:
         resp = client.chat.completions.create(
             model=model,
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.7,
+            temperature=0.8,
             max_tokens=240,
         )
         return resp.choices[0].message.content.strip()
@@ -302,8 +464,48 @@ def describe_with_llm_augmented(
     chg = int(_fmt('FormalCharge'))
 
     import random
-    opener = ["Design", "Target", "Prioritize", "Seek", "Synthesize", "Aim for", "Generate", "A", "Generate a molecule with"]
-    shuffled_opener = random.shuffle(opener)
+    opener = [
+        "Design",
+        "Target",
+        "Prioritize",
+        "Seek",
+        "Synthesize",
+        "Aim for",
+        "Generate",
+        "A",
+        "Generate a molecule with",
+        "Create",
+        "Construct",
+        "Devise",
+        "Produce",
+        "Assemble",
+        "Formulate",
+        "Invent",
+        "Compose",
+        "Engineer",
+        "Draft",
+        "Model",
+        "Simulate",
+        "Propose",
+        "Derive",
+        "Fabricate",
+        "Conceive",
+        "Iteratively generate",
+        "Augment",
+        "Mutate",
+        "Explore",
+        "Optimize generation of",
+        "Generate variations of",
+        "Generate candidates for",
+        "Expand",
+        "Refine generated",
+        "Transform",
+        "Generate analogs of",
+        "Generate potential",
+        "Generate configurations of",
+        "Automate generation of"
+    ]
+    random.shuffle(opener)
 
     system_msg = (
         "You are a senior medicinal chemist specifying a target for a de novo "
@@ -311,7 +513,7 @@ def describe_with_llm_augmented(
         "that a language model would use to generate a molecule. Use med-chem language "
         "(pharmacophores, polarity, aromaticity, ionization). Vary tone; avoid formulaic phrasing. "
         "Avoid analysis phrasing. Do not echo raw numbers verbatim; instead translate them into qualitative aims. "
-        f"Avoid starting with 'We' or 'We want'. Prefer openers like {shuffled_opener}. Choose a opener randomly and vary the style of the generated description."
+        f"Avoid starting with 'We' or 'We want'.  Use an opener inspired by: {opener}."
     )
 
     user_msg = (
@@ -333,12 +535,39 @@ def describe_with_llm_augmented(
                 {"role": "system", "content": system_msg},
                 {"role": "user", "content": user_msg},
             ],
-            temperature=0.65,
+            temperature=0.8,
             max_tokens=240,
         )
         return resp.choices[0].message.content.strip()
     except Exception:
         return ""
+
+
+def describe_similar_to_smiles(smiles:str) -> str:
+    versions = [
+        f"Suggest a molecule that resembles {smiles}.",
+        f"Design a compound similar to {smiles}.",
+        f"Propose a molecule with properties akin to {smiles}.",
+        f"Create a chemical structure that matches the pharmacophore of {smiles}.",
+        f"Develop a molecule that shares the functional groups of {smiles}.",
+        f"Identify a molecule with physicochemical properties similar to {smiles}.",
+        f"Invent a molecule with a pharmacophore profile comparable to {smiles}.",
+        f"Produce a compound reflecting the functional group pattern of {smiles}.",
+        f"Craft a molecule exhibiting physicochemical characteristics like {smiles}.",
+        f"Formulate a molecule inspired by the pharmacophore of {smiles}.",
+        f"Generate a chemical analog of {smiles}.",
+        f"Suggest a molecule that mimics {smiles} in chemical behavior.",
+        f"Design a structure that resembles the functional layout of {smiles}.",
+        f"Propose a compound exhibiting properties similar to {smiles}.",
+        f"Develop a molecule reflecting the key chemical features of {smiles}.",
+        f"Invent a molecule analogous to {smiles} in structure and function.",
+        f"Craft a chemical entity with similar active site characteristics as {smiles}.",
+        f"Formulate a molecule that parallels the pharmacophore profile of {smiles}.",
+        f"Generate a compound with functional groups arranged like those in {smiles}.",
+        f"Create a molecule that shares core chemical motifs with {smiles}.",
+    ]
+    random.shuffle(versions)
+    return versions[0]
 
 
 def gather_sdf_paths(root: Path) -> List[Path]:
@@ -393,7 +622,7 @@ def _process_sdf(args_tuple: Tuple[str, str, Optional[str], str]) -> List[Tuple[
         except Exception:
             client = None
 
-    rows: List[Tuple[str, str, str, str, str, str, str]] = []
+    rows: List[Tuple[str, str, str, str, str, str, str, str]] = []
     smiles_list = sdf_to_smiles_list(sdf_path)
     if not smiles_list:
         return rows
@@ -402,8 +631,9 @@ def _process_sdf(args_tuple: Tuple[str, str, Optional[str], str]) -> List[Tuple[
     for idx, smiles in enumerate(smiles_list):
         fg_names = extract_functional_group_names(smiles)
         text_func = describe_fgs_human_like(fg_names, client, model)
-        text_llm = describe_with_llm(smiles, client, model)
+        # text_llm = describe_with_llm(smiles, client, model)
         name = f"{base_name}"
+        text_similar = describe_similar_to_smiles(smiles)
 
         # Build RDKit mol for additional annotations
         mol = Chem.MolFromSmiles(smiles)
@@ -442,8 +672,9 @@ def _process_sdf(args_tuple: Tuple[str, str, Optional[str], str]) -> List[Tuple[
             text_pharm_llm = ""
             text_physchem_llm = ""
 
+        text_llm = ""
         text_combined = "; ".join(x for x in [text_func, text_pharm, text_physchem] if x)
-        rows.append((name, text_func, text_llm, llm_aug, text_pharm_llm, text_physchem_llm, text_combined))
+        rows.append((name, text_func, text_llm, llm_aug, text_similar, text_pharm_llm, text_physchem_llm, text_combined))
     return rows
 
 
@@ -467,19 +698,19 @@ def main():
     out_csv.parent.mkdir(parents=True, exist_ok=True)
     with open(out_csv, "w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["name", "text_func", "text_llm", "text_llm_aug", "text_pharm_llm", "text_physchem_llm", "text_combined"]) 
+        writer.writerow(["name", "text_func", "text_llm_aug", "text_similar", "text_pharm_llm", "text_physchem_llm", "text_combined"]) 
 
         if args.num_procs > 1:
             work = [(str(p), str(args.data_root), args.openai_api_key, args.openai_model) for p in sdf_paths][:5]
             with mp.Pool(processes=args.num_procs) as pool:
                 for rows in tqdm(pool.imap_unordered(_process_sdf, work), total=len(work)):
-                    for name, text_func, text_llm, text_llm_aug, text_pharm_llm, text_physchem_llm, text_combined in rows:
-                        writer.writerow([name, text_func, text_llm, text_llm_aug, text_pharm_llm, text_physchem_llm, text_combined])
+                    for name, text_func, text_llm, text_llm_aug, text_similar, text_pharm_llm, text_physchem_llm, text_combined in rows:
+                        writer.writerow([name, text_func, text_llm_aug, text_similar, text_pharm_llm, text_physchem_llm, text_combined])
         else:
             for sdf_path in tqdm(sdf_paths):
                 rows = _process_sdf((str(sdf_path), str(args.data_root), args.openai_api_key, args.openai_model))
-                for name, text_func, text_llm, text_llm_aug, text_pharm_llm, text_physchem_llm, text_combined in rows:
-                    writer.writerow([name, text_func, text_llm, text_llm_aug, text_pharm_llm, text_physchem_llm, text_combined])
+                for name, text_func, text_llm, text_llm_aug, text_similar, text_pharm_llm, text_physchem_llm, text_combined in rows:
+                    writer.writerow([name, text_func, text_llm_aug, text_similar, text_pharm_llm, text_physchem_llm, text_combined])
 
     print(f"Wrote: {out_csv}")
 
