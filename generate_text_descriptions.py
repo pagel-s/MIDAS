@@ -104,6 +104,70 @@ def describe_physchem(props: Dict[str, float]) -> str:
     )
 
 
+# -------------------- NEW: LLM renderers for pharm + physchem --------------------
+def describe_pharmacophores_llm(counts: Dict[str, int], client: Optional[object], model: str) -> str:
+    if client is None:
+        return ""
+    parts = []
+    for fam, val in sorted(counts.items()):
+        if val:
+            parts.append(f"{fam}:{val}")
+    pharm_str = ", ".join(parts) if parts else "none"
+    # system_msg = (
+    #     "You are a medicinal chemist. Write a single concise sentence describing the molecule's pharmacophore profile "
+    #     "in qualitative terms for a generation model. Avoid listing raw counts; translate into phrases like 'multiple hydrogen-bond donors', 'aromatic character', 'hydrophobic regions'."
+    # )
+    # user_msg = f"Pharmacophore counts (family:count): {pharm_str}"
+    system_msg = (
+    "As a medicinal chemist, describe the molecule's pharmacophore profile in one concise, qualitative sentence. "
+    "Use phrases like 'multiple hydrogen-bond donors', 'aromatic character', and 'hydrophobic regions' instead of numerical counts."
+)
+    user_msg = f"Pharmacophore counts (family:count): {pharm_str}"
+    try:
+        resp = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": system_msg},
+                {"role": "user", "content": user_msg},
+            ],
+            temperature=0.6,
+            max_tokens=120,
+        )
+        return resp.choices[0].message.content.strip()
+    except Exception:
+        return ""
+
+
+def describe_physchem_llm(props: Dict[str, float], client: Optional[object], model: str) -> str:
+    if client is None:
+        return ""
+    # make a compact props string
+    keys = ["MW", "logP", "TPSA", "HBD", "HBA", "RotB", "Rings", "AromRings", "fSP3", "FormalCharge"]
+    kv = ", ".join(f"{k}={props.get(k)}" for k in keys if k in props)
+    # system_msg = (
+    #     "You are a medicinal chemist. Summarize the physicochemical profile as a single prescriptive sentence for a generator. "
+    #     "Do not repeat exact numbers; map them to qualitative aims (e.g., 'moderate lipophilicity', 'low polar surface area', 'few rotors')."
+    # )
+    # user_msg = f"Properties: {kv}"
+    system_msg = (
+    "You are a medicinal chemist. Generate a single, prescriptive sentence guiding an AI molecule generator on the desired physicochemical profile. "
+    "Replace specific numerical values with qualitative descriptions, e.g., 'moderate lipophilicity', 'low polar surface area', 'limited rotatable bonds'."
+)
+    user_msg = f"Properties: {kv}"
+    try:
+        resp = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": system_msg},
+                {"role": "user", "content": user_msg},
+            ],
+            temperature=0.6,
+            max_tokens=120,
+        )
+        return resp.choices[0].message.content.strip()
+    except Exception:
+        return ""
+
 def extract_functional_group_names(smiles: str) -> List[str]:
     try:
         fgs = exmol.get_functional_groups(smiles)
@@ -118,17 +182,28 @@ def describe_fgs_human_like(fg_names: List[str], client: Optional[object], model
         return "No prominent functional groups identified."
     if client is None:
         return "Functional groups identified: " + ", ".join(fg_names) + "."
+    # system_msg = (
+    #     "You are a senior medicinal chemist writing target profiles for de novo design. "
+    #     "Given functional groups, craft a short, prescriptive request (1-3 sentences) for what the molecule should have, "
+    #     "as if instructing a generative model. Use med-chem language (polarity, ionization, aromaticity). "
+    #     "Vary tone and phrasing across outputs; avoid repetitive patterns. "
+    #     "Do not include SMILES or analysis language. Do not start with 'We' or 'We want'. "
+    #     "Prefer openers like: 'Design', 'Target', 'Prioritize', 'Seek', 'Synthesize', 'Aim for'."
+    # )
+    # user_msg = (
+    #     "Functional groups to include/emphasize: " + ", ".join(fg_names) + ".\n"
+    #     "Write a request that specifies these features in a plausible small-molecule design."
+    # )
     system_msg = (
-        "You are a senior medicinal chemist writing target profiles for de novo design. "
-        "Given functional groups, craft a short, prescriptive request (1-3 sentences) for what the molecule should have, "
-        "as if instructing a generative model. Use med-chem language (polarity, ionization, aromaticity). "
-        "Vary tone and phrasing across outputs; avoid repetitive patterns. "
-        "Do not include SMILES or analysis language. Do not start with 'We' or 'We want'. "
-        "Prefer openers like: 'Design', 'Target', 'Prioritize', 'Seek', 'Synthesize', 'Aim for'."
+        "You are a senior medicinal chemist instructing a generative AI for de novo design. "
+        "Based on provided functional groups, write a concise, prescriptive request (1-3 sentences) for the desired molecule. "
+        "Incorporate medicinal chemistry concepts (polarity, ionization, aromaticity). "
+        "Vary language and structure for each output; avoid repetition. "
+        "Do not use 'We' or 'We want'. Begin with action verbs such as: 'Design', 'Target', 'Prioritize', 'Seek', 'Synthesize', 'Aim for', 'Generate."
     )
     user_msg = (
         "Functional groups to include/emphasize: " + ", ".join(fg_names) + ".\n"
-        "Write a request that specifies these features in a plausible small-molecule design."
+        "Instruct the model to incorporate these features into a plausible small-molecule design."
     )
     try:
         resp = client.chat.completions.create(
@@ -169,6 +244,7 @@ def describe_with_llm(smiles: str, client: Optional[object], model: str) -> str:
 
 
 def describe_with_llm_augmented(
+    smiles: str,
     fg_names: List[str],
     pharm_counts: Dict[str, int],
     props: Dict[str, float],
@@ -218,13 +294,15 @@ def describe_with_llm_augmented(
     )
 
     user_msg = (
-        "Use the following features to guide the request for the generator:\n\n"
+        "Use the following to guide a prescriptive request for the generator.\n\n"
+        f"Reference SMILES: {smiles}\n"
         f"Functional groups (hints): {fgs_str}\n"
         f"Pharmacophore counts: {pharm_str}\n"
         f"Physicochemical profile: MW ~{mw:.0f}, logP ~{logp:.1f}, TPSA ~{tpsa:.0f} Å^2, "
         f"HBD {hbd}, HBA {hba}, rotatable bonds ~{rotb}, rings {rings} (aromatic {arom_r}), fSP3 ~{fsp3:.2f}, "
         f"formal charge {chg}.\n\n"
-        "Write the request as if instructing a molecule generator to produce a molecule with these traits."
+        "Write the request as if instructing a molecule generator to produce a molecule with these traits. "
+        "Do not echo the SMILES; instead translate it into salient structural/functional intents."
     )
 
     try:
@@ -310,6 +388,7 @@ def _process_sdf(args_tuple: Tuple[str, str, Optional[str], str]) -> List[Tuple[
         mol = Chem.MolFromSmiles(smiles)
         text_pharm, text_physchem = "", ""
         llm_aug = ""
+        text_pharm_llm, text_physchem_llm = "", ""
         if mol is not None:
             try:
                 counts = get_pharmacophore_counts(mol)
@@ -323,16 +402,27 @@ def _process_sdf(args_tuple: Tuple[str, str, Optional[str], str]) -> List[Tuple[
                 text_physchem = "Properties: unavailable."
             # Augmented LLM prompt using pharm + physchem
             try:
-                llm_aug = describe_with_llm_augmented(fg_names, counts, props, client, model)
+                llm_aug = describe_with_llm_augmented(smiles, fg_names, counts, props, client, model)
             except Exception:
                 llm_aug = ""
+            # Individual LLM renderings
+            try:
+                text_pharm_llm = describe_pharmacophores_llm(counts, client, model)
+            except Exception:
+                text_pharm_llm = ""
+            try:
+                text_physchem_llm = describe_physchem_llm(props, client, model)
+            except Exception:
+                text_physchem_llm = ""
         else:
             text_pharm = "Pharmacophore features: unavailable."
             text_physchem = "Properties: unavailable."
             llm_aug = ""
+            text_pharm_llm = ""
+            text_physchem_llm = ""
 
         text_combined = "; ".join(x for x in [text_func, text_pharm, text_physchem] if x)
-        rows.append((name, text_func, text_llm, llm_aug, text_pharm, text_physchem, text_combined))
+        rows.append((name, text_func, text_llm, llm_aug, text_pharm_llm, text_physchem_llm, text_combined))
     return rows
 
 
@@ -356,19 +446,19 @@ def main():
     out_csv.parent.mkdir(parents=True, exist_ok=True)
     with open(out_csv, "w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["name", "text_func", "text_llm", "text_llm_aug", "text_pharm", "text_physchem", "text_combined"]) 
+        writer.writerow(["name", "text_func", "text_llm", "text_llm_aug", "text_pharm_llm", "text_physchem_llm", "text_combined"]) 
 
         if args.num_procs > 1:
-            work = [(str(p), str(args.data_root), args.openai_api_key, args.openai_model) for p in sdf_paths]
+            work = [(str(p), str(args.data_root), args.openai_api_key, args.openai_model) for p in sdf_paths][:5]
             with mp.Pool(processes=args.num_procs) as pool:
                 for rows in tqdm(pool.imap_unordered(_process_sdf, work), total=len(work)):
-                    for name, text_func, text_llm, text_llm_aug, text_pharm, text_physchem, text_combined in rows:
-                        writer.writerow([name, text_func, text_llm, text_llm_aug, text_pharm, text_physchem, text_combined])
+                    for name, text_func, text_llm, text_llm_aug, text_pharm_llm, text_physchem_llm, text_combined in rows:
+                        writer.writerow([name, text_func, text_llm, text_llm_aug, text_pharm_llm, text_physchem_llm, text_combined])
         else:
             for sdf_path in tqdm(sdf_paths):
                 rows = _process_sdf((str(sdf_path), str(args.data_root), args.openai_api_key, args.openai_model))
-                for name, text_func, text_llm, text_llm_aug, text_pharm, text_physchem, text_combined in rows:
-                    writer.writerow([name, text_func, text_llm, text_llm_aug, text_pharm, text_physchem, text_combined])
+                for name, text_func, text_llm, text_llm_aug, text_pharm_llm, text_physchem_llm, text_combined in rows:
+                    writer.writerow([name, text_func, text_llm, text_llm_aug, text_pharm_llm, text_physchem_llm, text_combined])
 
     print(f"Wrote: {out_csv}")
 
