@@ -950,17 +950,7 @@ class LigandPocketDDPM(pl.LightningModule):
             # Ensure embedder and FiLM heads are initialized
             if self.text_embedder is None:
                 self.text_embedder = TextEmbeddingModel.get(self.text_model_name, device=self.device)
-            # if self.text_film_atoms is None or self.text_film_res is None:
-            #     cond_dim = self.text_embedder.embedding_dim
-            #     hidden = self.ddpm.dynamics.atom_encoder[2].out_features
-            #     self.text_film_atoms = torch.nn.Sequential(
-            #         torch.nn.Linear(cond_dim, hidden), torch.nn.SiLU(),
-            #         torch.nn.Linear(hidden, 2 * hidden)
-            #     ).to(self.device)
-            #     self.text_film_res = torch.nn.Sequential(
-            #         torch.nn.Linear(cond_dim, hidden), torch.nn.SiLU(),
-            #         torch.nn.Linear(hidden, 2 * hidden)
-            #     ).to(self.device)
+
 
             if isinstance(text_description, str):
                 texts = [text_description] * n_samples
