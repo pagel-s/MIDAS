@@ -4,6 +4,12 @@ from typing import Optional
 from time import time
 from pathlib import Path
 
+import sys
+import os
+REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
+if REPO_ROOT not in sys.path:
+    sys.path.append(REPO_ROOT)
+
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -88,7 +94,6 @@ class LigandPocketDDPM(pl.LightningModule):
         self.clip_grad = clip_grad
         if clip_grad:
             self.gradnorm_queue = utils.Queue()
-            # Add large value that will be flushed.
             self.gradnorm_queue.add(3000)
 
         self.lig_type_encoder = self.dataset_info['atom_encoder']
