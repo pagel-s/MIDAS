@@ -1,4 +1,32 @@
-# Instructions for LangDiff
+# MIDAS
+<div style="text-align: center;">
+  <img src="img/midas.png" style="width:50%;">
+</div>
+
+### Conda environment
+
+A conda environment can be created and activated using
+```bash
+conda env create -f environment.yaml -n midas
+conda activate midas
+```
+
+
+### Pre-trained models
+Pre-trained models can be downloaded from [Zenodo](https://zenodo.org/record/8183747).
+- [CrossDocked, conditional $`C_\alpha`$ model](https://zenodo.org/record/8183747/files/crossdocked_ca_cond.ckpt?download=1)
+- [CrossDocked, joint $`C_\alpha`$ model](https://zenodo.org/record/8183747/files/crossdocked_ca_joint.ckpt?download=1)
+- [CrossDocked, conditional full-atom model](https://zenodo.org/record/8183747/files/crossdocked_fullatom_cond.ckpt?download=1)
+- [CrossDocked, joint full-atom model](https://zenodo.org/record/8183747/files/crossdocked_fullatom_joint.ckpt?download=1)
+- [Binding MOAD, conditional $`C_\alpha`$ model](https://zenodo.org/record/8183747/files/moad_ca_cond.ckpt?download=1)
+- [Binding MOAD, joint $`C_\alpha`$ model](https://zenodo.org/record/8183747/files/moad_ca_joint.ckpt?download=1)
+- [Binding MOAD, conditional full-atom model](https://zenodo.org/record/8183747/files/moad_fullatom_cond.ckpt?download=1)
+- [Binding MOAD, joint full-atom model](https://zenodo.org/record/8183747/files/moad_fullatom_joint.ckpt?download=1)
+
+
+### Instructions for MIDAS
+
+
 
 1. Follow instructions to load Crossdocked dataset below
 
@@ -75,6 +103,7 @@ python train.py --config configs/FT_crossdock_fullatom_cond.yml
    --resume /PATH/TO/CHECKPOINT/crossdocked_ca_joint.ckpt
 ```
 
+<details>
 # DiffSBDD: Structure-based Drug Design with Equivariant Diffusion Models
 
 Official implementation of **DiffSBDD**, an equivariant diffusion model for structure-based drug design, by Arne Schneuing, Charles Harris, Yuanqi Du, Kieran Didi, Arian Jamasb, Ilia Igashov, Weitao Du, Carla Gomes, Tom Blundell, Pietro Lio, Max Welling, Michael Bronstein & Bruno Correia.
@@ -343,3 +372,4 @@ all_qed, all_sa, all_logp, all_lipinski, per_pocket_diversity = \
    url={https://doi.org/10.1038/s43588-024-00737-x}
 }
 ```
+</details>

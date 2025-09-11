@@ -693,7 +693,7 @@ def main():
 
     out_csv = args.out_csv or Path(args.data_root, "descriptions.csv")
 
-    sdf_paths = gather_sdf_paths(args.data_root)[:5]
+    sdf_paths = gather_sdf_paths(args.data_root)
 
     out_csv.parent.mkdir(parents=True, exist_ok=True)
     with open(out_csv, "w", newline="") as f:
@@ -701,7 +701,7 @@ def main():
         writer.writerow(["name", "text_func", "text_llm_aug", "text_similar", "text_pharm_llm", "text_physchem_llm", "text_combined"]) 
 
         if args.num_procs > 1:
-            work = [(str(p), str(args.data_root), args.openai_api_key, args.openai_model) for p in sdf_paths][:5]
+            work = [(str(p), str(args.data_root), args.openai_api_key, args.openai_model) for p in sdf_paths]
             with mp.Pool(processes=args.num_procs) as pool:
                 for rows in tqdm(pool.imap_unordered(_process_sdf, work), total=len(work)):
                     for name, text_func, text_llm, text_llm_aug, text_similar, text_pharm_llm, text_physchem_llm, text_combined in rows:
