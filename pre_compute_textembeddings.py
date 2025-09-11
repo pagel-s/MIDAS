@@ -25,7 +25,10 @@ def load_text_descriptions(csv_path: Path) -> Dict[str, str]:
     with open(csv_path, 'r', newline='') as f:
         reader = csv.DictReader(f)
         for row in reader:
-            descriptions[row['name']] = row['text']
+            if row["name"] not in descriptions:
+                descriptions[row['name']] = []
+            
+            descriptions[row['name']].append(row['text'])
     return descriptions
 
 
@@ -48,13 +51,17 @@ def precompute_embeddings(
     print(f"Embedding dimension: {embedder.embedding_dim}")
     print(f"Number of descriptions: {len(text_descriptions)}")
     
-    # Prepare data
-    names = list(text_descriptions.keys())
-    texts = list(text_descriptions.values())
+
+    names = []
+    texts = []
+    for name, text_list in text_descriptions.items():
+        for text in text_list:
+            names.append(name)
+            texts.append(text)
     
     # Compute embeddings in batches
     all_embeddings = []
-    
+
     for i in tqdm(range(0, len(texts), batch_size), desc="Computing embeddings"):
         batch_texts = texts[i:i + batch_size]
         

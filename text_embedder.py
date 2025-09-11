@@ -13,7 +13,7 @@ class TextEmbeddingModel:
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         # Some HuggingFace models (e.g., T5 variants) require SentencePiece and slow tokenizer
         # Force use_fast=False to avoid conversion errors
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=False)
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=False, trust_remote_code=True)
         self.model = AutoModel.from_pretrained(model_name)
         self.model.to(self.device)
         self.model.eval()
@@ -26,10 +26,14 @@ class TextEmbeddingModel:
             if self.is_encoder_decoder:
                 encoder = self.model.get_encoder()
                 out = encoder(**dummy)
-                last_hidden = out.last_hidden_state
+                last_hidden = getattr(out, "last_hidden_state", None)
+                if last_hidden is None:
+                    last_hidden = out[0]
             else:
                 out = self.model(**dummy)
-                last_hidden = out.last_hidden_state
+                last_hidden = getattr(out, "last_hidden_state", None)
+                if last_hidden is None:
+                    last_hidden = out[0]
             self.embedding_dim = last_hidden.size(-1)
 
     @classmethod
@@ -46,10 +50,14 @@ class TextEmbeddingModel:
         if self.is_encoder_decoder:
             encoder = self.model.get_encoder()
             outputs = encoder(**encoded)
-            hidden = outputs.last_hidden_state
+            hidden = getattr(outputs, "last_hidden_state", None)
+            if hidden is None:
+                hidden = outputs[0]
         else:
             outputs = self.model(**encoded)
-            hidden = outputs.last_hidden_state  # (B, L, H)
+            hidden = getattr(outputs, "last_hidden_state", None)
+            if hidden is None:
+                hidden = outputs[0]
         # Mean-pool over tokens, masking padding
         attention_mask = encoded.get("attention_mask")
         if attention_mask is not None:

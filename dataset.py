@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 from torch.utils.data import Dataset
+import random
 
 
 class ProcessedLigandPocketDataset(Dataset):
@@ -44,13 +45,24 @@ class ProcessedLigandPocketDataset(Dataset):
         self.text_embeddings = None
         self.name_to_embedding_idx = {}
         
+        # if text_embeddings_path is not None:
+        #     # Load precomputed embeddings
+        #     with np.load(text_embeddings_path, allow_pickle=True) as f:
+        #         self.text_embeddings = torch.from_numpy(f['embeddings'])
+        #         embedding_names = f['names']
+        #         # Create mapping from name to embedding index
+        #         self.name_to_embedding_idx = {name: idx for idx, name in enumerate(embedding_names)}
         if text_embeddings_path is not None:
             # Load precomputed embeddings
             with np.load(text_embeddings_path, allow_pickle=True) as f:
                 self.text_embeddings = torch.from_numpy(f['embeddings'])
                 embedding_names = f['names']
-                # Create mapping from name to embedding index
-                self.name_to_embedding_idx = {name: idx for idx, name in enumerate(embedding_names)}
+                # Create mapping from name to list of embedding indices
+                from collections import defaultdict
+                name_to_indices = defaultdict(list)
+                for idx, name in enumerate(embedding_names):
+                    name_to_indices[name].append(idx)
+                self.name_to_embedding_indices = dict(name_to_indices)
 
     def __len__(self):
         return len(self.data['names'])
@@ -58,12 +70,15 @@ class ProcessedLigandPocketDataset(Dataset):
     def __getitem__(self, idx):
         data = {key: val[idx] for key, val in self.data.items()}
         
+        
         # Handle text conditioning
         if self.text_embeddings is not None:
             # Use precomputed embeddings
             name = self.data['names'][idx]
-            if name in self.name_to_embedding_idx:
-                embedding_idx = self.name_to_embedding_idx[name]
+
+            if name in self.name_to_embedding_indices:
+                indices = self.name_to_embedding_indices[name]
+                embedding_idx = random.choice(indices)
                 data['text_embedding'] = self.text_embeddings[embedding_idx]
             else:
                 # Fallback to zero embedding if name not found

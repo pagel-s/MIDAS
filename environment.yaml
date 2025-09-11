@@ -18,6 +18,7 @@ dependencies:
       - pytorch-lightning==1.9.2
       - ipykernel
       - wandb==0.13.1
+      - einops==0.8.1
   - rdkit=2025.3.6
   - biopython=1.79
   - imageio=2.21.2

@@ -1,9 +1,9 @@
-run_name: 'all_text_embeddings_chemt5'
+run_name: 'all_text_embeddings_llama'
 logdir: '/mnt/STORAGE3/sebastian2/data_hackathon/logs'
 wandb_params:
   mode: 'online'  # disabled, offline, online
   entity: '2838102p'
-  group: 'crossdock_lang'
+  group: 'crossdock_lang_llama'
 dataset: 'crossdock'
 datadir: '/mnt/STORAGE3/sebastian2/data_hackathon/data/crossdocked_pocket10_proc_ca_only'
 enable_progress_bar: True
@@ -62,6 +62,6 @@ eval_params:
   n_visualize_samples: 5
   keep_frames: 100
 
-text_model_name: "GT4SD/multitask-text-and-chemistry-t5-base-standard"
+text_model_name: "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
 # text_csv: "./data/training_descriptions_mixed.csv"
-text_embeddings_path: "/mnt/STORAGE3/sebastian2/data_hackathon/data/all_embed_chemt5.npz"
+text_embeddings_path: "/mnt/STORAGE3/sebastian2/data_hackathon/data/all_embed_tinyllama.npz"
