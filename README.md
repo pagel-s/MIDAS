@@ -11,6 +11,36 @@ conda env create -f environment.yaml -n midas
 conda activate midas
 ```
 
+### Running the MIDAS Front End
+
+To launch the MIDAS front end from the project root, first export your OpenAI API key:
+
+```bash
+export OPENAI_API_KEY=YOUR_OPENAI_API_KEY
+```
+
+A required model checkpoint must be downloaded and set before running MIDAS.
+
+You can download the checkpoint and config files from [this Google Drive folder](https://drive.google.com/drive/folders/1KYPGxqjo9HHVani3FrhEmbZvHSaf7dro?usp=sharing).
+
+After downloading, place the checkpoint file and config files in the `./config` directory (or update your configuration to point to its location).
+
+**Example paths:**
+```bash
+CKPT_PATH='.PATH/TO/CHECKPOINT/'
+CONFIG_YML='./config/FT_crossdock_fullatom_cond.yml
+```
+
+Then run:
+
+```bash
+python frontend/front_end.py
+```
+
+- The SMILES string for your target molecule will be entered directly in the frontend user interface.
+- Make sure your conda environment is activated and all dependencies are installed before running.
+
+The front end will automatically use the API key from the `OPENAI_API_KEY
 
 ### Pre-trained models
 Pre-trained models can be downloaded from [Zenodo](https://zenodo.org/record/8183747).
@@ -22,8 +52,6 @@ wget -P checkpoints/ https://zenodo.org/record/8183747/files/crossdocked_cond.ck
 It will be stored in the `./checkpoints` folder.
 
 ### Instructions for MIDAS
-
-
 
 1. Follow instructions to load Crossdocked dataset below
 
