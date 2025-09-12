@@ -26,9 +26,9 @@ You can download the checkpoint and config files from [this Google Drive folder]
 After downloading, place the checkpoint file and config files in the `./config` directory (or update your configuration to point to its location).
 
 **Example paths:**
-```bash
-CKPT_PATH='.PATH/TO/CHECKPOINT/'
-CONFIG_YML='./config/FT_crossdock_fullatom_cond.yml
+```python
+CKPT_PATH='./config/chkp_file'
+CONFIG_YML='./config/chemt5.yml
 ```
 
 Then run:
