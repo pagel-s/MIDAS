@@ -2,11 +2,13 @@ import subprocess
 import os
 import json
 import logging
-from typing import List, Dict
+from typing import List, Dict, Any
 from rdkit import Chem
 from rdkit.Chem import rdChemReactions, Draw
 import argparse
 import pandas as pd
+from collections import defaultdict
+import json as _json
 
 # Logging setup
 logging.basicConfig(level=logging.INFO)
@@ -45,39 +47,49 @@ def run_retrosynthesis(smiles: str) -> Dict:
     subprocess.run(cmd, check=True)
     logger.info(f"Retrosynthesis completed. Routes saved in {OUTPUT_HDF5}")
 
-    json_path = OUTPUT_HDF5.replace(".hdf5", ".json")
+    json_path = OUTPUT_HDF5
     data = pd.read_json(json_path)
 
     return data
 
 
-def recursive_rxn_smiles(data: dict, collected: List[str]) -> List[str]:
-    """Recursively extract reaction SMILES from retrosynthesis tree."""
-    rxn_smiles = data.get("metadata", {}).get("mapped_reaction_smiles")
-    if rxn_smiles:
-        products, reactants = rxn_smiles.split(">>")
+def recursive_rxn_smiles(data, all_rxn_smiles, level=0):
+    for child in data:
         
-        def remove_mapping(smiles: str) -> str:
+        if "metadata" in child:
+            if "mapped_reaction_smiles" in child["metadata"]:
+                rxn_smiles = child["metadata"]["mapped_reaction_smiles"]
+            else:
+                return all_rxn_smiles
+        else:
+            return all_rxn_smiles
+        products = rxn_smiles.split(">>")[0].split(".")
+        reactants = rxn_smiles.split(">>")[1].split(".")
+
+        # remove atom mapping numbers
+        def remove_atom_mapping(smiles):
             mol = Chem.MolFromSmiles(smiles)
-            if mol:
-                for atom in mol.GetAtoms():
-                    atom.SetAtomMapNum(0)
-                return Chem.MolToSmiles(mol)
-            return smiles
+            for atom in mol.GetAtoms():
+                atom.SetAtomMapNum(0)
+            return Chem.MolToSmiles(mol)
 
-        products = [remove_mapping(p) for p in products.split(".")]
-        reactants = [remove_mapping(r) for r in reactants.split(".")]
-        collected.append(".".join(reactants) + ">>" + ".".join(products))
-
-    for child in data.get("children", []):
-        recursive_rxn_smiles(child, collected)
-
-    return collected
+        products = [remove_atom_mapping(p) for p in products]
+        reactants = [remove_atom_mapping(r) for r in reactants]
 
 
-def get_all_rxn_smiles(data: dict) -> List[str]:
+        # rejoing the reactants and products
+        rxn_smiles = ".".join(reactants) + ">>" + ".".join(products)
+        all_rxn_smiles[level].append(rxn_smiles)
+        if "children" in child:
+            for child in child["children"]:
+                if "children" in child:
+                    recursive_rxn_smiles(child["children"], all_rxn_smiles, level+1)
+
+        return all_rxn_smiles
+
+def get_all_rxn_smiles(data: dict, all_rxn_smiles: defaultdict, level: int) -> List[str]:
     """Get all reaction SMILES from a retrosynthesis tree."""
-    return recursive_rxn_smiles(data, [])
+    return recursive_rxn_smiles(data, all_rxn_smiles, level)
 
 
 def retro_planner():
@@ -88,18 +100,84 @@ def retro_planner():
 
     download_aizynth_data(DATA_DIR)
     data = run_retrosynthesis(args.smiles)
-    all_rxn_smiles = get_all_rxn_smiles(data.children.values[0][0])
-    
+    all_rxn_smiles = get_all_rxn_smiles(data["children"].values[0], defaultdict(list), 0)
+
     logger.info(f"Retrosynthesis completed for {args.smiles}")
     logger.info(f"Extracted {len(all_rxn_smiles)} reactions.")
-    for idx, rxn in enumerate(all_rxn_smiles):
+    counter = 0
+    for idx, rxn_list in enumerate(all_rxn_smiles.values()):
         # display the reaction tree
-        rxn = rdChemReactions.ReactionFromSmarts(rxn, useSmiles=True)
-        img = Draw.ReactionToImage(rxn, subImgSize=(400, 200))
-        logger.info(rxn)
-        save_path = os.path.join(IMAGE_FOLDER, f"reaction_{idx}.png")
-        img.save(save_path)
-        logger.info(f"Reaction image saved to {save_path}")
+        for rxn in rxn_list:
+            rxn = rdChemReactions.ReactionFromSmarts(rxn, useSmiles=True)
+            img = Draw.ReactionToImage(rxn, subImgSize=(400, 200))
+            logger.info(rxn)
+            save_path = os.path.join(IMAGE_FOLDER, f"reaction_{counter}.png")
+            img.save(save_path)
+            logger.info(f"Reaction image saved to {save_path}")
+        counter += 1
+
+
+def _collect_reaction_smiles_from_tree(tree: Any) -> List[str]:
+    """
+    Traverse an AiZynthFinder output tree (dict or list) and collect mapped reaction SMILES.
+    """
+    reactions: List[str] = []
+
+    def _walk(node):
+        if isinstance(node, list):
+            for child in node:
+                _walk(child)
+            return
+        if not isinstance(node, dict):
+            return
+        meta = node.get("metadata", {})
+        rxn = meta.get("mapped_reaction_smiles")
+        if rxn:
+            reactions.append(rxn)
+        children = node.get("children")
+        if children:
+            _walk(children)
+
+    _walk(tree)
+    return reactions
+
+
+def run_retrosynthesis_images(smiles: str, output_dir: str = IMAGE_FOLDER, sub_img_size=(400, 200)) -> List[str]:
+    """
+    Run retrosynthesis and save reaction-step images.
+
+    Returns a list of saved PNG paths.
+    """
+    os.makedirs(output_dir, exist_ok=True)
+    download_aizynth_data(DATA_DIR)
+    data = run_retrosynthesis(smiles)
+
+    # Locate tree payload from dict or pandas DataFrame-like structure
+    if isinstance(data, dict):
+        tree_payload = data.get("children", data)
+    else:
+        try:
+            tree_payload = data["children"].values[0]
+        except Exception:
+            tree_payload = data
+
+    rxns = _collect_reaction_smiles_from_tree(tree_payload)
+    saved_paths: List[str] = []
+    counter = 0
+    for rxn in rxns:
+        try:
+            rxn_obj = rdChemReactions.ReactionFromSmarts(rxn, useSmiles=True)
+            img = Draw.ReactionToImage(rxn_obj, subImgSize=sub_img_size)
+            save_path = os.path.join(output_dir, f"reaction_{counter}.png")
+            img.save(save_path)
+            saved_paths.append(save_path)
+            counter += 1
+        except Exception:
+            # Skip any rendering errors
+            continue
+
+    return saved_paths
+
 
 if __name__ == "__main__":
     retro_planner()

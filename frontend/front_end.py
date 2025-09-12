@@ -90,6 +90,7 @@ def _extract_updates_from_steps(steps):
     sim_update = None
     dock_update = None
     gen_paths = None
+    retro_update = None
     try:
         for s in steps or []:
             observation = None
@@ -115,9 +116,11 @@ def _extract_updates_from_steps(steps):
                 sim_update = d
             elif t == "dock":
                 dock_update = d
+            elif t == "retrosyn":
+                retro_update = d
     except Exception:
         pass
-    return props_update, sim_update, dock_update, gen_paths
+    return props_update, sim_update, dock_update, gen_paths, retro_update
 
 
 def agent_send(user_message, history, pdb_state, ref_state, slider_value, gen_paths_state):
@@ -154,7 +157,7 @@ def agent_send(user_message, history, pdb_state, ref_state, slider_value, gen_pa
     output_text = res.get("output", "")
     steps = res.get("intermediate_steps", [])
 
-    props_update, sim_update, dock_update, gen_paths = _extract_updates_from_steps(steps)
+    props_update, sim_update, dock_update, gen_paths, retro_update = _extract_updates_from_steps(steps)
 
     out_view_update = gr.update()
     slider_update = gr.update()
@@ -223,6 +226,16 @@ def agent_send(user_message, history, pdb_state, ref_state, slider_value, gen_pa
         except Exception:
             output_text = "Docking completed."
 
+    retro_gallery_update = gr.update(visible=False)
+    if retro_update and isinstance(retro_update, dict):
+        imgs = retro_update.get("images", [])
+        if imgs:
+            # Convert to [[path, caption], ...]
+            items = [[p, os.path.basename(p)] for p in imgs if os.path.exists(p)]
+            if items:
+                retro_gallery_update = gr.update(value=items, visible=True)
+                output_text = f"Retrosynthesis completed. {len(items)} step image(s)."
+
     new_hist = history + [(user_message, output_text or "Done.")]
     return (
         new_hist,
@@ -234,6 +247,7 @@ def agent_send(user_message, history, pdb_state, ref_state, slider_value, gen_pa
         sim_gallery_update,
         dock_json_update,
         props_img_update,
+        retro_gallery_update,
     )
 
 
@@ -402,6 +416,7 @@ with gr.Blocks(css=css) as demo:
         props_img = gr.Image(label="Pharmacophore", visible=False)
         sim_gallery = gr.Gallery(label="Similar molecules (CID + SMILES)", columns=5, height=340, visible=False)
         dock_json = gr.JSON(label="Docking", visible=False)
+        retro_gallery = gr.Gallery(label="Retrosynthesis routes", columns=2, height=340, visible=False)
 
         send_btn = gr.Button("Send")
 
@@ -420,7 +435,7 @@ with gr.Blocks(css=css) as demo:
         send_btn.click(
             agent_send,
             inputs=[chat_input, chat_history, pdb_state, ref_state, ligand_selector, gen_paths_state],
-            outputs=[chat, chat_history, out_view, ligand_selector, gen_paths_state, props_json, sim_gallery, dock_json, props_img],
+            outputs=[chat, chat_history, out_view, ligand_selector, gen_paths_state, props_json, sim_gallery, dock_json, props_img, retro_gallery],
         ).then(lambda: "", None, [chat_input])
 
         ligand_selector.change(

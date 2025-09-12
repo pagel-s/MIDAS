@@ -70,6 +70,22 @@ def _pubchem_similarity(smiles: str, num_results: int = 10, threshold: int = 85)
     return {"results": results}
 
 
+def _retrosynthesis(smiles: str, max_images: int = 10) -> dict:
+    """Run retrosynthesis for a SMILES and return saved route image paths."""
+    try:
+        from tools.retrosynthesis import run_retrosynthesis_images, IMAGE_FOLDER
+    except Exception as e:
+        return {"error": f"retrosynthesis deps missing: {e}"}
+
+    try:
+        paths = run_retrosynthesis_images(smiles, output_dir=IMAGE_FOLDER)
+        if isinstance(paths, list) and max_images is not None:
+            paths = paths[: int(max_images)]
+        return {"images": paths}
+    except Exception as e:
+        return {"error": str(e)}
+
+
 _MODEL_CACHE = {"model": None}
 
 
@@ -210,6 +226,28 @@ def tool_similarity_current() -> str:
         return json.dumps({"type": "similarity", "data": sim})
     except Exception as e:
         return json.dumps({"type": "similarity", "data": {"error": str(e)}})
+
+
+def tool_retrosyn_current() -> str:
+    """Run retrosynthesis for the CURRENTLY SELECTED ligand from the UI."""
+    try:
+        from rdkit import Chem
+    except Exception as e:
+        return json.dumps({"type": "retrosyn", "data": {"error": str(e)}})
+
+    lig = _get_ctx("selected_ligand")
+    if not lig or not os.path.exists(lig):
+        return json.dumps({"type": "retrosyn", "data": {"images": []}})
+    try:
+        suppl = Chem.SDMolSupplier(lig, removeHs=False)
+        mols = [m for m in suppl if m is not None]
+        if not mols:
+            return json.dumps({"type": "retrosyn", "data": {"images": []}})
+        smiles = Chem.MolToSmiles(mols[0])
+        res = _retrosynthesis(smiles, max_images=12)
+        return json.dumps({"type": "retrosyn", "data": res})
+    except Exception as e:
+        return json.dumps({"type": "retrosyn", "data": {"error": str(e)}})
 
 
 def tool_dock_current() -> str:
@@ -354,6 +392,10 @@ def build_tools():
         exhaustiveness: int = Field(32, description="Vina exhaustiveness")
         n_poses: int = Field(5, description="Number of poses to generate")
 
+    class RetrosynthesisInput(BaseModel):
+        smiles: str = Field(..., description="SMILES string to run retrosynthesis on")
+        max_images: int = Field(10, description="Max number of route images to return")
+
     tools = [
         StructuredTool.from_function(
             func=_calc_properties,
@@ -410,6 +452,21 @@ def build_tools():
                 "Dock the CURRENTLY SELECTED ligand against the CURRENT protein using Vina."
             ),
         ),
+        StructuredTool.from_function(
+            func=_retrosynthesis,
+            name="retrosynthesis",
+            description=(
+                "Run retrosynthesis for a SMILES using AiZynthFinder and return image paths."
+            ),
+            args_schema=RetrosynthesisInput,
+        ),
+        StructuredTool.from_function(
+            func=tool_retrosyn_current,
+            name="retrosyn_current",
+            description=(
+                "Run retrosynthesis for the CURRENTLY SELECTED ligand from the UI and return image paths."
+            ),
+        ),
     ]
     return tools
 
@@ -425,6 +482,8 @@ def build_context_tools():
                                      description="Run PubChem similarity for the CURRENTLY SELECTED ligand from the UI."),
         StructuredTool.from_function(func=tool_dock_current, name="dock_current",
                                      description="Dock the CURRENTLY SELECTED ligand against the CURRENT protein using Vina."),
+        StructuredTool.from_function(func=tool_retrosyn_current, name="retrosyn_current",
+                                     description="Run retrosynthesis for the CURRENTLY SELECTED ligand and return image paths."),
     ]
     return tools
 
