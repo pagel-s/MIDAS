@@ -122,10 +122,10 @@ print(f"Wrote {len(rows)} rows to {DST_CSV}")
 python precompute_text_embeddings.py --text_csv /PATH/TO/OUTPUT/descriptons_selected.csv --model_name GT4SD/multitask-text-and-chemistry-t5-base-standard --output /PATH/TO/EMBEDDINGS/text_embeddings.npz --batch_size 32 --device cuda
 ```
 
-5. Train model (update FT_crossdock_fullatom_cond.yml paths, make suree checkpoints are downlaoded (see below))
+5. Train model (update respective ckpt.yml paths, make suree checkpoints are downlaoded (see below))
 ```bash
-python train.py --config configs/FT_crossdock_fullatom_cond.yml 
-   --resume /PATH/TO/CHECKPOINT/crossdocked_ca_joint.ckpt
+python train.py --config configs/ckpt.yml 
+   --resume /PATH/TO/CHECKPOINT/ckpt.ckpt
 ```
 
 ### Finetuned Model:
