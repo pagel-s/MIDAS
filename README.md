@@ -3,6 +3,8 @@
   <img src="img/midas.png" width="50%">
 </p>
 
+|A temporarz live demo can be found [here](https://491b6a0cbd60a73d00.gradio.live)
+
 ### Conda environment
 
 A conda environment can be created and activated using
