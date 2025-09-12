@@ -1,6 +1,7 @@
 import os
 import sys
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
+import json
 
 
 def _ensure_repo_on_path() -> None:
@@ -17,6 +18,7 @@ def _ensure_repo_on_path() -> None:
 
 _ensure_repo_on_path()
 
+
 def _lazy_import_langchain():
     from pydantic import BaseModel, Field
     from langchain.tools import StructuredTool
@@ -31,6 +33,7 @@ def _lazy_import_langchain():
 # -----------------------------
 # Tool wrappers
 # -----------------------------
+
 def _app_temp_dir() -> str:
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     tmpdir = os.path.join(repo_root, "tmp", "midas_agent")
@@ -55,7 +58,6 @@ def _pubchem_similarity(smiles: str, num_results: int = 10, threshold: int = 85)
     try:
         inchi_list = cids_to_inchi(cids)
     except Exception:
-        # pubchempy may be missing; still return CIDs
         inchi_list = []
     results = []
     base = "https://pubchem.ncbi.nlm.nih.gov/compound/"
@@ -69,6 +71,7 @@ def _pubchem_similarity(smiles: str, num_results: int = 10, threshold: int = 85)
 
 
 _MODEL_CACHE = {"model": None}
+
 
 def _get_model():
     if _MODEL_CACHE["model"] is not None:
@@ -123,14 +126,91 @@ def _generate_ligands_tool(pdb_file: str,
         return {"error": str(e)}
 
 
-def _dock_ligand(reference_sdf: str,
-                  protein_pdb: str,
-                  ligand_sdf: Optional[str] = None,
-                  smiles: Optional[str] = None,
-                  score_only: Optional[bool] = None,
-                  box_size: Optional[List[float]] = None,
-                  exhaustiveness: int = 32,
-                  n_poses: int = 5) -> dict:
+# -----------------------------
+# Context-aware tools for UI state
+# -----------------------------
+_UI_CONTEXT: Dict[str, Any] = {}
+
+
+def set_ui_context(ctx: Dict[str, Any]) -> None:
+    global _UI_CONTEXT
+    _UI_CONTEXT = ctx or {}
+
+
+def _get_ctx(key: str, default=None):
+    return _UI_CONTEXT.get(key, default)
+
+
+def tool_generate_current() -> str:
+    pdb_path = _get_ctx("pdb_path")
+    ref_sdf = _get_ctx("ref_sdf")
+    instructions = _get_ctx("instructions", "Generate ligands for the provided pocket.")
+    n_samples = int(_get_ctx("n_samples", 10))
+    n_nodes_min = int(_get_ctx("n_nodes_min", 15))
+    # print the context
+    print(f"Context: {_UI_CONTEXT}")
+    
+    res = _generate_ligands_tool(
+        pdb_file=pdb_path,
+        instructions=instructions,
+        n_samples=n_samples,
+        n_nodes_min=n_nodes_min,
+        ref_ligand=ref_sdf,
+        sanitize=True,
+        largest_frag=True,
+        relax_iter=200,
+    )
+    return json.dumps({"type": "generate", "data": res})
+
+
+def tool_props_current() -> str:
+    try:
+        from rdkit import Chem
+    except Exception as e:
+        return json.dumps({"type": "props", "data": {"error": str(e)}})
+    lig = _get_ctx("selected_ligand")
+    if not lig or not os.path.exists(lig):
+        return json.dumps({"type": "props", "data": {"error": "No ligand selected"}})
+    try:
+        suppl = Chem.SDMolSupplier(lig, removeHs=False)
+        mols = [m for m in suppl if m is not None]
+        if not mols:
+            return json.dumps({"type": "props", "data": {"error": "Failed to read SDF"}})
+        from tools.prop_evaluation import calculate_properties
+        smiles = Chem.MolToSmiles(mols[0])
+        props = calculate_properties(smiles)
+        props["SMILES"] = smiles
+        return json.dumps({"type": "props", "data": props})
+    except Exception as e:
+        return json.dumps({"type": "props", "data": {"error": str(e)}})
+
+
+def tool_similarity_current() -> str:
+    try:
+        from rdkit import Chem
+    except Exception as e:
+        return json.dumps({"type": "similarity", "data": {"error": str(e)}})
+    lig = _get_ctx("selected_ligand")
+    if not lig or not os.path.exists(lig):
+        return json.dumps({"type": "similarity", "data": {"results": []}})
+    try:
+        suppl = Chem.SDMolSupplier(lig, removeHs=False)
+        mols = [m for m in suppl if m is not None]
+        if not mols:
+            return json.dumps({"type": "similarity", "data": {"results": []}})
+        smiles = Chem.MolToSmiles(mols[0])
+        sim = _pubchem_similarity(smiles, num_results=10, threshold=85)
+        return json.dumps({"type": "similarity", "data": sim})
+    except Exception as e:
+        return json.dumps({"type": "similarity", "data": {"error": str(e)}})
+
+
+def tool_dock_current() -> str:
+    pdb_path = _get_ctx("pdb_path")
+    ref_sdf = _get_ctx("ref_sdf")
+    lig = _get_ctx("selected_ligand")
+    if not lig or not os.path.exists(lig):
+        return json.dumps({"type": "dock", "data": {"error": "No ligand selected"}})
     try:
         from tools.docking import (
             prep_receptor,
@@ -138,82 +218,30 @@ def _dock_ligand(reference_sdf: str,
             prep_ligand,
             vina_dock,
         )
-    except Exception as e:
-        return {"error": f"docking deps missing: {e}"}
-
-    if box_size is None:
         box_size = [20, 20, 20]
-
-    # Validate input choice
-    if (ligand_sdf is None and not smiles) or (ligand_sdf and smiles):
-        return {"error": "Provide exactly one of ligand_sdf or smiles"}
-
-    used_ligand_sdf = ligand_sdf
-    generated_from_smiles = False
-
-    # If SMILES provided, build 3D SDF first
-    if smiles:
-        try:
-            import tempfile
-            from rdkit import Chem
-            from rdkit.Chem import AllChem
-        except Exception as e:
-            return {"error": f"RDKit required to build 3D from SMILES: {e}"}
-        try:
-            mol = Chem.MolFromSmiles(smiles)
-            if mol is None:
-                return {"error": "Invalid SMILES"}
-            mol = Chem.AddHs(mol)
-            params = AllChem.ETKDGv3()
-            params.randomSeed = 1337
-            res = AllChem.EmbedMolecule(mol, params)
-            if res != 0:
-                return {"error": "Failed to embed 3D conformer from SMILES"}
-            try:
-                AllChem.MMFFOptimizeMolecule(mol)
-            except Exception:
-                pass
-            tmp_sdf = os.path.join(_app_temp_dir(), "ligand_from_smiles.sdf")
-            writer = Chem.SDWriter(tmp_sdf)
-            writer.write(mol)
-            writer.close()
-            used_ligand_sdf = tmp_sdf
-            generated_from_smiles = True
-        except Exception as e:
-            return {"error": f"Failed to generate 3D from SMILES: {e}"}
-
-    # Determine effective score_only behavior
-    # Default: SDF -> True, SMILES (built 3D) -> False
-    score_only_effective = True if not generated_from_smiles else False
-    if score_only is not None:
-        score_only_effective = bool(score_only)
-
-    try:
-        receptor_pdbqt = prep_receptor(protein_pdb, protein_pdb.replace(".pdb", ".pdbqt"))
-        docking_center = compute_center_from_ligand(reference_sdf)
-        lig_pdbqt = used_ligand_sdf.replace(".sdf", ".pdbqt")
-        prep_ligand(used_ligand_sdf, lig_pdbqt)
+        receptor_pdbqt = prep_receptor(pdb_path, pdb_path.replace(".pdb", ".pdbqt"))
+        docking_center = compute_center_from_ligand(ref_sdf if ref_sdf else lig)
+        lig_pdbqt = lig.replace(".sdf", ".pdbqt")
+        prep_ligand(lig, lig_pdbqt)
         score = vina_dock(
             lig_pdbqt,
             receptor_pdbqt,
             docking_center,
             box_size=box_size,
-            score_only=score_only_effective,
-            n_poses=n_poses,
-            exhaustiveness=exhaustiveness,
+            score_only=False,
+            n_poses=5,
+            exhaustiveness=32,
         )
+        data = {
+            "score": float(score),
+            "receptor_pdbqt": receptor_pdbqt,
+            "ligand_pdbqt": lig_pdbqt,
+            "center": [float(x) for x in docking_center],
+            "box_size": box_size,
+        }
+        return json.dumps({"type": "dock", "data": data})
     except Exception as e:
-        return {"error": str(e)}
-
-    return {
-        "score": float(score),
-        "receptor_pdbqt": receptor_pdbqt,
-        "ligand_pdbqt": lig_pdbqt,
-        "used_ligand_sdf": used_ligand_sdf,
-        "generated_from_smiles": generated_from_smiles,
-        "center": [float(x) for x in docking_center],
-        "box_size": box_size,
-    }
+        return json.dumps({"type": "dock", "data": {"error": str(e)}})
 
 
 def build_tools():
@@ -238,7 +266,7 @@ def build_tools():
         relax_iter: int = Field(200, description="Relaxation iterations")
 
     class DockLigandInput(BaseModel):
-        reference_sdf: str = Field(..., description="Path to reference ligand SDF to set docking center")
+        reference_sdf: Optional[str] = Field(None, description="Reference ligand SDF to set docking center")
         protein_pdb: str = Field(..., description="Path to protein PDB file")
         ligand_sdf: Optional[str] = Field(None, description="Path to ligand SDF to dock (provide this OR smiles)")
         smiles: Optional[str] = Field(None, description="Ligand SMILES to build 3D (provide this OR ligand_sdf)")
@@ -276,23 +304,56 @@ def build_tools():
             args_schema=GenerateLigandsInput,
         ),
         StructuredTool.from_function(
-            func=_dock_ligand,
-            name="dock_ligand",
+            func=tool_generate_current,
+            name="generate_current",
             description=(
-                "Dock a ligand into a protein PDB using Vina. Input can be an SDF file (scoring only) "
-                "or a SMILES string (build 3D first and dock). Provide reference SDF to set docking center."
+                "Generate ligands using the CURRENT UI context (pdb/ref/instructions) with defaults."
             ),
-            args_schema=DockLigandInput,
+        ),
+        StructuredTool.from_function(
+            func=tool_props_current,
+            name="props_current",
+            description=(
+                "Compute properties for the CURRENTLY SELECTED ligand from the UI."
+            ),
+        ),
+        StructuredTool.from_function(
+            func=tool_similarity_current,
+            name="similarity_current",
+            description=(
+                "Run PubChem similarity for the CURRENTLY SELECTED ligand from the UI."
+            ),
+        ),
+        StructuredTool.from_function(
+            func=tool_dock_current,
+            name="dock_current",
+            description=(
+                "Dock the CURRENTLY SELECTED ligand against the CURRENT protein using Vina."
+            ),
         ),
     ]
     return tools
 
 
-def get_agent(llm=None, verbose: bool = True):
+def build_context_tools():
+    BaseModel, Field, StructuredTool, _, _, _ = _lazy_import_langchain()
+    tools = [
+        StructuredTool.from_function(func=tool_generate_current, name="generate_current",
+                                     description="Generate ligands using the CURRENT UI context (pdb/ref/instructions)."),
+        StructuredTool.from_function(func=tool_props_current, name="props_current",
+                                     description="Compute properties for the CURRENTLY SELECTED ligand from the UI."),
+        StructuredTool.from_function(func=tool_similarity_current, name="similarity_current",
+                                     description="Run PubChem similarity for the CURRENTLY SELECTED ligand from the UI."),
+        StructuredTool.from_function(func=tool_dock_current, name="dock_current",
+                                     description="Dock the CURRENTLY SELECTED ligand against the CURRENT protein using Vina."),
+    ]
+    return tools
+
+
+def get_agent(llm=None, verbose: bool = True, context_only: bool = False):
     BaseModel, Field, StructuredTool, create_structured_chat_agent, AgentExecutor, hub = _lazy_import_langchain()
-    tools = build_tools()
+    tools = build_context_tools() if context_only else build_tools()
     if llm is None:
-        # Default to OpenAI via langchain if API key is available
         try:
             from langchain_openai import ChatOpenAI
             llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
@@ -302,7 +363,6 @@ def get_agent(llm=None, verbose: bool = True):
                 f"Set OPENAI_API_KEY or pass a custom llm."
             )
 
-    # Use the structured chat agent which supports multi-argument tools
     prompt = None
     if hub is not None:
         try:
@@ -313,24 +373,41 @@ def get_agent(llm=None, verbose: bool = True):
     if prompt is None:
         from langchain_core.prompts import ChatPromptTemplate
         from langchain_core.prompts import MessagesPlaceholder
+        sys_msg = (
+            "You are a helpful agent for molecular design.\n"
+            "You have access to tools that operate on the CURRENT UI context (protein path, reference path, currently selected ligand).\n"
+            "Always use the provided tools to take actions; do not fabricate file paths."
+        )
         prompt = ChatPromptTemplate.from_messages([
-            ("system", "You are a helpful agent for molecular design. Use the provided tools when helpful. If a tool fails, explain the failure clearly."),
+            ("system", sys_msg),
             ("human", "{input}"),
             MessagesPlaceholder("agent_scratchpad"),
         ])
 
     agent_runnable = create_structured_chat_agent(llm, tools, prompt)
-    agent_executor = AgentExecutor(agent=agent_runnable, tools=tools, verbose=verbose)
+    agent_executor = AgentExecutor(
+        agent=agent_runnable,
+        tools=tools,
+        verbose=verbose,
+        return_intermediate_steps=True,
+    )
     return agent_executor
 
 
 def route(query: str) -> str:
     agent = get_agent()
     result = agent.invoke({"input": query})
-    # AgentExecutor returns a dict with 'output'
     if isinstance(result, dict) and "output" in result:
         return result["output"]
     return str(result)
+
+
+def run_agent_with_context(prompt: str, context: Dict[str, Any]) -> Dict[str, Any]:
+    """Set UI context, run the agent, return output and intermediate steps."""
+    set_ui_context(context)
+    agent = get_agent(context_only=True)
+    res = agent.invoke({"input": prompt})
+    return res
 
 
 if __name__ == "__main__":

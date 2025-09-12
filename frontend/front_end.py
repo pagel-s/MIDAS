@@ -5,6 +5,7 @@ import tempfile
 import os
 from rdkit import Chem
 import requests
+import json
 
 import torch
 from argparse import Namespace
@@ -60,11 +61,9 @@ def _copy_to_tmp(src_path):
 if REPO_ROOT not in sys.path:
     sys.path.append(REPO_ROOT)
 
-# from lightning_modules import LigandPocketDDPM
 from main import load_model_using_config
 from config import CKPT_PATH, CONFIG_YML
-from midas_agent.router import route as agent_route
-from midas_agent.router import _generate_ligands_tool, _pubchem_similarity, _dock_ligand
+from midas_agent.router import run_agent_with_context
 from tools.prop_evaluation import calculate_properties
 
 
@@ -83,134 +82,152 @@ model = load_model_using_config(CONFIG_YML, CKPT_PATH)
 # Minimal agent actions
 # -----------------------------
 
+def _extract_updates_from_steps(steps):
+    props_update = None
+    sim_update = None
+    dock_update = None
+    gen_paths = None
+    try:
+        for s in steps or []:
+            observation = None
+            if isinstance(s, (list, tuple)) and len(s) == 2:
+                # (AgentAction, observation)
+                observation = s[1]
+            elif isinstance(s, dict):
+                observation = s.get("observation")
+            if observation is None:
+                continue
+            try:
+                data = observation if isinstance(observation, dict) else json.loads(str(observation))
+            except Exception:
+                continue
+            t = data.get("type")
+            d = data.get("data", {})
+            if t == "generate":
+                paths = d.get("generated_sdf_paths", [])
+                if paths:
+                    gen_paths = paths
+            elif t == "props":
+                props_update = d
+            elif t == "similarity":
+                sim_update = d
+            elif t == "dock":
+                dock_update = d
+    except Exception:
+        pass
+    return props_update, sim_update, dock_update, gen_paths
+
+
 def agent_send(user_message, history, pdb_state, ref_state, slider_value, gen_paths_state):
     if not user_message:
         return (
-            history,
-            history,
-            gr.update(),  # out_view
-            gr.update(),  # ligand_selector
-            gr.update(),  # gen_paths_state
-            gr.update(visible=False),  # props_json
-            gr.update(visible=False),  # sim_gallery
-            gr.update(visible=False),  # dock_json
+            history, history, gr.update(), gr.update(), gr.update(),
+            gr.update(visible=False), gr.update(visible=False), gr.update(visible=False)
         )
     pdb_path = _copy_to_tmp(pdb_state)
     ref_sdf = _copy_to_tmp(ref_state)
-    text = (user_message or "").lower()
 
-    # Generation request
-    if any(k in text for k in ["generate", "design", "sample", "create"]):
-        if not pdb_path or not os.path.exists(pdb_path):
-            reply = "Please upload a protein PDB first."
-            new_hist = history + [(user_message, reply)]
-            return (
-                new_hist,
-                new_hist,
-                gr.update(),
-                gr.update(),
-                gr.update(),
-                gr.update(visible=False),
-                gr.update(visible=False),
-                gr.update(visible=False),
-            )
-        result = _generate_ligands_tool(
-            pdb_file=pdb_path,
-            instructions=user_message,
-            n_samples=10,
-            n_nodes_min=15,
-            ref_ligand=ref_sdf,
-            sanitize=True,
-            largest_frag=True,
-            relax_iter=200,
-        )
-        if "error" in result:
-            reply = f"Generation failed: {result['error']}"
-            new_hist = history + [(user_message, reply)]
-            return (
-                new_hist,
-                new_hist,
-                gr.update(),
-                gr.update(),
-                gr.update(),
-                gr.update(visible=False),
-                gr.update(visible=False),
-                gr.update(visible=False),
-            )
-        file_paths = result.get("generated_sdf_paths", [])
-        if not file_paths:
-            reply = "No molecules generated."
-            new_hist = history + [(user_message, reply)]
-            return (
-                new_hist,
-                new_hist,
-                gr.update(),
-                gr.update(),
-                gr.update(),
-                gr.update(visible=False),
-                gr.update(visible=False),
-                gr.update(visible=False),
-            )
+    # Build UI context for the agent
+    selected_idx = 0
+    try:
+        selected_idx = int(slider_value) - 1
+    except Exception:
+        selected_idx = 0
+    sel_lig = None
+    if gen_paths_state and isinstance(gen_paths_state, list) and len(gen_paths_state) > 0:
+        if 0 <= selected_idx < len(gen_paths_state):
+            sel_lig = gen_paths_state[selected_idx]
+        else:
+            sel_lig = gen_paths_state[0]
+
+    ctx = {
+        "pdb_path": pdb_path,
+        "ref_sdf": ref_sdf,
+        "selected_ligand": sel_lig,
+        "instructions": user_message,
+        "n_samples": 10,
+        "n_nodes_min": 15,
+    }
+
+    res = run_agent_with_context(user_message, ctx)
+    output_text = res.get("output", "")
+    steps = res.get("intermediate_steps", [])
+
+    props_update, sim_update, dock_update, gen_paths = _extract_updates_from_steps(steps)
+
+    # Update viewer and slider if generation occurred (show largest)
+    out_view_update = gr.update()
+    slider_update = gr.update()
+    gen_paths_state_update = gr.update()
+    if gen_paths:
         sizes = []
-        for p in file_paths:
+        for p in gen_paths:
             try:
                 ms = Chem.SDMolSupplier(p, removeHs=False)
                 mols = [m for m in ms if m is not None]
                 sizes.append(mols[0].GetNumAtoms() if mols else 0)
             except Exception:
                 sizes.append(0)
-        idx_best = int(max(range(len(file_paths)), key=lambda i: sizes[i])) if file_paths else 0
-        viewer = gr.update(value=[pdb_path, file_paths[idx_best]], visible=True)
-        slider = gr.update(visible=True, minimum=1, maximum=len(file_paths), value=idx_best + 1, step=1)
-        reply = f"Generated {len(file_paths)} molecule(s). Use the slider to browse"
-        new_hist = history + [(user_message, reply)]
-        return (
-            new_hist,
-            new_hist,
-            viewer,
-            slider,
-            file_paths,
-            gr.update(visible=False),
-            gr.update(visible=False),
-            gr.update(visible=False),
-        )
+        idx_best = int(max(range(len(gen_paths)), key=lambda i: sizes[i])) if gen_paths else 0
+        out_view_update = gr.update(value=[pdb_path, gen_paths[idx_best]], visible=True)
+        slider_update = gr.update(visible=True, minimum=1, maximum=len(gen_paths), value=idx_best + 1, step=1)
+        gen_paths_state_update = gen_paths
+        # Override chat message to a clean summary
+        output_text = f"Generated {len(gen_paths)} molecule(s). Use the slider to browse"
 
-    # Derived actions using current selection
-    def _props():
-        return do_props(slider_value, gen_paths_state)
+    # Transform similarity JSON into gallery items if present
+    sim_gallery_update = gr.update(visible=False)
+    if sim_update and isinstance(sim_update, dict):
+        results = sim_update.get("results", [])
+        items = []
+        for r in results[:10]:
+            cid = r.get("cid")
+            if cid is None:
+                continue
+            smi = None
+            try:
+                prop_url = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/{cid}/property/CanonicalSMILES/JSON"
+                resp = requests.get(prop_url, timeout=20)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    props = data.get("PropertyTable", {}).get("Properties", [])
+                    if props:
+                        smi = props[0].get("CanonicalSMILES")
+            except Exception:
+                smi = None
+            img_url = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/{cid}/PNG?image_size=300x300"
+            caption = f"CID {cid}\n{(smi or '')}"
+            items.append([img_url, caption])
+        sim_gallery_update = gr.update(value=items, visible=True)
+        output_text = f"Found {len(items)} similar molecule(s)."
 
-    def _sim():
-        return do_similarity(slider_value, gen_paths_state)
+    props_json_update = gr.update(visible=False)
+    if props_update:
+        props_json_update = gr.update(value=props_update, visible=True)
+        output_text = "Computed properties for the current molecule."
 
-    def _dock():
-        return do_dock(slider_value, pdb_state, ref_state, gen_paths_state)
+    dock_json_update = gr.update(visible=False)
+    if dock_update:
+        dock_json_update = gr.update(value=dock_update, visible=True)
+        try:
+            score = dock_update.get("score")
+            if score is not None:
+                output_text = f"Docking completed. Score: {float(score):.2f}"
+            else:
+                output_text = "Docking completed."
+        except Exception:
+            output_text = "Docking completed."
 
-    updated_props = gr.update(visible=False)
-    updated_sim = gr.update(visible=False)
-    updated_dock = gr.update(visible=False)
-
-    if any(k in text for k in ["property", "properties", "prop"]):
-        updated_props = _props()
-    if any(k in text for k in ["similar", "similarity", "pubchem"]):
-        updated_sim = _sim()
-    if any(k in text for k in ["dock", "docking"]):
-        updated_dock = _dock()
-
-    context = f"Protein PDB file: {pdb_path}. Reference ligand SDF: {ref_sdf}. "
-    try:
-        reply = agent_route(context + user_message)
-    except Exception as e:
-        reply = f"Agent error: {e}"
-    new_hist = history + [(user_message, reply)]
+    new_hist = history + [(user_message, output_text or "Done.")]
     return (
         new_hist,
         new_hist,
-        gr.update(),  # out_view unchanged
-        gr.update(),  # slider unchanged
-        gr.update(),  # gen_paths_state unchanged
-        updated_props,
-        updated_sim,
-        updated_dock,
+        out_view_update,
+        slider_update,
+        gen_paths_state_update if gen_paths_state_update else gr.update(),
+        props_json_update,
+        sim_gallery_update,
+        dock_json_update,
     )
 
 
@@ -287,7 +304,6 @@ def do_similarity(index, paths_state):
             cid = r.get("cid")
             if cid is None:
                 continue
-            # Fetch canonical SMILES for the CID
             smi = None
             try:
                 prop_url = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/{cid}/property/CanonicalSMILES/JSON"
