@@ -19,10 +19,10 @@ from pathlib import Path
 import os
 
 
-REPO_ROOT = os.path.abspath(os.path.join(os.getcwd(), ".."))
+REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 
 if REPO_ROOT not in sys.path:
-    sys.path.append(os.path.join(REPO_ROOT, "MIDAS"))
+    sys.path.append(REPO_ROOT)
 
 # from lightning_modules import LigandPocketDDPM
 from main import load_model_using_config
