@@ -42,6 +42,9 @@ python frontend/front_end.py
 
 The front end will automatically use the API key from the `OPENAI_API_KEY
 
+
+To recreate the dataset generation, and model trainig following these instructions:
+
 ### Pre-trained models
 Pre-trained models can be downloaded from [Zenodo](https://zenodo.org/record/8183747).
 - [CrossDocked, conditional $`C_\alpha`$ model](https://zenodo.org/record/8183747/files/crossdocked_ca_cond.ckpt?download=1)
