@@ -41,7 +41,8 @@ def calculate_properties(smiles: str) -> dict:
     properties["QED"] = round(QED.qed(mol), 2)
     return properties
 
-def draw_pharmacophore_features(smiles: str):
+
+def draw_pharmacophore_features(smiles: str, output_path: str | None = None):
     """
     Draw a molecule with automatically detected pharmacophore features highlighted.
 
@@ -49,6 +50,8 @@ def draw_pharmacophore_features(smiles: str):
     ----------
     smiles : str
         SMILES string of the molecule to visualize.
+    output_path : str | None
+        If provided, saves the image to this path; otherwise saves to 'pharmacophore_features.png'.
 
     Pharmacophore features highlighted
     ----------------------------------
@@ -58,12 +61,6 @@ def draw_pharmacophore_features(smiles: str):
     - PosIonizable : Positively ionizable groups (green)
     - NegIonizable : Negatively ionizable groups (orange)
     - Hydrophobe : Hydrophobic groups (brown)
-
-    Notes
-    -----
-    Uses RDKit's ChemicalFeatures with the default BaseFeatures.fdef file.
-    Colors are assigned per feature type, and atoms belonging to multiple
-    features will be highlighted with the last assigned color.
     """
 
     mol = Chem.MolFromSmiles(smiles)
@@ -102,8 +99,10 @@ def draw_pharmacophore_features(smiles: str):
         highlightAtomColors=[highlight_atom_colors],
         subImgSize=(300, 300)
     )
-    img.show()
-    img.save("pharmacophore_features.png")
+    if output_path is None:
+        output_path = "pharmacophore_features.png"
+    img.save(output_path)
+    return output_path
 
 
 if __name__ == "__main__":

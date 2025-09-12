@@ -6,6 +6,7 @@ import os
 from rdkit import Chem
 import requests
 import json
+from PIL import Image
 
 import torch
 from argparse import Namespace
@@ -64,12 +65,14 @@ if REPO_ROOT not in sys.path:
 from main import load_model_using_config
 from config import CKPT_PATH, CONFIG_YML
 from midas_agent.router import run_agent_with_context
-from tools.prop_evaluation import calculate_properties
+from tools.prop_evaluation import calculate_properties, draw_pharmacophore_features
+from midas_agent.router import _pubchem_similarity
+from midas_agent.router import _dock_ligand
 
 
 reps = [
-    {"model": 0, "style": "cartoon", "color": "blue"}, 
-    {"model": 1, "style": "stick", "color": "greenCarbon"},
+    {"model": 0, "style": "cartoon", "color": "orange"},
+    {"model": 1, "style": "stick",   "color": "cyanCarbon"},
 ]
 
 CKPT_PATH = CKPT_PATH
@@ -91,7 +94,6 @@ def _extract_updates_from_steps(steps):
         for s in steps or []:
             observation = None
             if isinstance(s, (list, tuple)) and len(s) == 2:
-                # (AgentAction, observation)
                 observation = s[1]
             elif isinstance(s, dict):
                 observation = s.get("observation")
@@ -122,12 +124,11 @@ def agent_send(user_message, history, pdb_state, ref_state, slider_value, gen_pa
     if not user_message:
         return (
             history, history, gr.update(), gr.update(), gr.update(),
-            gr.update(visible=False), gr.update(visible=False), gr.update(visible=False)
+            gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False)
         )
     pdb_path = _copy_to_tmp(pdb_state)
     ref_sdf = _copy_to_tmp(ref_state)
 
-    # Build UI context for the agent
     selected_idx = 0
     try:
         selected_idx = int(slider_value) - 1
@@ -155,10 +156,11 @@ def agent_send(user_message, history, pdb_state, ref_state, slider_value, gen_pa
 
     props_update, sim_update, dock_update, gen_paths = _extract_updates_from_steps(steps)
 
-    # Update viewer and slider if generation occurred (show largest)
     out_view_update = gr.update()
     slider_update = gr.update()
     gen_paths_state_update = gr.update()
+    props_img_update = gr.update(visible=False)
+
     if gen_paths:
         sizes = []
         for p in gen_paths:
@@ -172,10 +174,8 @@ def agent_send(user_message, history, pdb_state, ref_state, slider_value, gen_pa
         out_view_update = gr.update(value=[pdb_path, gen_paths[idx_best]], visible=True)
         slider_update = gr.update(visible=True, minimum=1, maximum=len(gen_paths), value=idx_best + 1, step=1)
         gen_paths_state_update = gen_paths
-        # Override chat message to a clean summary
         output_text = f"Generated {len(gen_paths)} molecule(s). Use the slider to browse"
 
-    # Transform similarity JSON into gallery items if present
     sim_gallery_update = gr.update(visible=False)
     if sim_update and isinstance(sim_update, dict):
         results = sim_update.get("results", [])
@@ -204,6 +204,11 @@ def agent_send(user_message, history, pdb_state, ref_state, slider_value, gen_pa
     props_json_update = gr.update(visible=False)
     if props_update:
         props_json_update = gr.update(value=props_update, visible=True)
+        img_path = props_update.get("pharmacophore_image") if isinstance(props_update, dict) else None
+        if img_path and os.path.exists(img_path):
+            props_img_update = gr.update(value=Image.open(img_path), visible=True)
+        else:
+            props_img_update = gr.update(visible=False)
         output_text = "Computed properties for the current molecule."
 
     dock_json_update = gr.update(visible=False)
@@ -228,6 +233,7 @@ def agent_send(user_message, history, pdb_state, ref_state, slider_value, gen_pa
         props_json_update,
         sim_gallery_update,
         dock_json_update,
+        props_img_update,
     )
 
 
@@ -282,6 +288,13 @@ def do_props(index, paths_state):
         smiles = Chem.MolToSmiles(mols[0])
         props = calculate_properties(smiles)
         props["SMILES"] = smiles
+        # create pharmacophore image
+        img_path = os.path.join(_app_temp_dir(), "pharmacophore_features.png")
+        try:
+            draw_pharmacophore_features(smiles, output_path=img_path)
+            props["pharmacophore_image"] = img_path
+        except Exception:
+            props["pharmacophore_image"] = None
         return gr.update(value=props, visible=True)
     except Exception as e:
         return gr.update(value={"error": str(e)}, visible=True)
@@ -380,12 +393,13 @@ with gr.Blocks(css=css) as demo:
 
         ligand_selector = gr.Slider(label="Select Generated Ligand", minimum=1, maximum=1, value=1, step=1, visible=False)
 
-        with gr.Row():
-            props_btn = gr.Button("Properties")
-            sim_btn = gr.Button("PubChem Similarity")
-            dock_btn = gr.Button("Dock")
+        # with gr.Row():
+        #     props_btn = gr.Button("Properties")
+        #     sim_btn = gr.Button("PubChem Similarity")
+        #     dock_btn = gr.Button("Dock")
 
         props_json = gr.JSON(label="Properties", visible=False)
+        props_img = gr.Image(label="Pharmacophore", visible=False)
         sim_gallery = gr.Gallery(label="Similar molecules (CID + SMILES)", columns=5, height=340, visible=False)
         dock_json = gr.JSON(label="Docking", visible=False)
 
@@ -406,7 +420,7 @@ with gr.Blocks(css=css) as demo:
         send_btn.click(
             agent_send,
             inputs=[chat_input, chat_history, pdb_state, ref_state, ligand_selector, gen_paths_state],
-            outputs=[chat, chat_history, out_view, ligand_selector, gen_paths_state, props_json, sim_gallery, dock_json],
+            outputs=[chat, chat_history, out_view, ligand_selector, gen_paths_state, props_json, sim_gallery, dock_json, props_img],
         ).then(lambda: "", None, [chat_input])
 
         ligand_selector.change(
@@ -415,23 +429,27 @@ with gr.Blocks(css=css) as demo:
             outputs=[out_view],
         )
 
-        props_btn.click(
-            do_props,
-            inputs=[ligand_selector, gen_paths_state],
-            outputs=[props_json],
-        )
+        # props_btn.click(
+        #     do_props,
+        #     inputs=[ligand_selector, gen_paths_state],
+        #     outputs=[props_json],
+        # ).then(
+        #     lambda d: gr.update(value=Image.open(d.get("pharmacophore_image")), visible=True) if isinstance(d, dict) and d.get("pharmacophore_image") and os.path.exists(d.get("pharmacophore_image")) else gr.update(visible=False),
+        #     inputs=[props_json],
+        #     outputs=[props_img]
+        # )
 
-        sim_btn.click(
-            do_similarity,
-            inputs=[ligand_selector, gen_paths_state],
-            outputs=[sim_gallery],
-        )
+        # sim_btn.click(
+        #     do_similarity,
+        #     inputs=[ligand_selector, gen_paths_state],
+        #     outputs=[sim_gallery],
+        # )
 
-        dock_btn.click(
-            do_dock,
-            inputs=[ligand_selector, pdb_state, ref_state, gen_paths_state],
-            outputs=[dock_json],
-        )
+        # dock_btn.click(
+        #     do_dock,
+        #     inputs=[ligand_selector, pdb_state, ref_state, gen_paths_state],
+        #     outputs=[dock_json],
+        # )
 
 if __name__ == "__main__":
     demo.launch()

@@ -172,14 +172,21 @@ def tool_props_current() -> str:
     if not lig or not os.path.exists(lig):
         return json.dumps({"type": "props", "data": {"error": "No ligand selected"}})
     try:
+        from tools.prop_evaluation import calculate_properties, draw_pharmacophore_features
         suppl = Chem.SDMolSupplier(lig, removeHs=False)
         mols = [m for m in suppl if m is not None]
         if not mols:
             return json.dumps({"type": "props", "data": {"error": "Failed to read SDF"}})
-        from tools.prop_evaluation import calculate_properties
         smiles = Chem.MolToSmiles(mols[0])
         props = calculate_properties(smiles)
         props["SMILES"] = smiles
+        # Save pharm image in agent tmp directory
+        out_img = os.path.join(_app_temp_dir(), "pharmacophore_features.png")
+        try:
+            draw_pharmacophore_features(smiles, output_path=out_img)
+            props["pharmacophore_image"] = out_img
+        except Exception:
+            props["pharmacophore_image"] = None
         return json.dumps({"type": "props", "data": props})
     except Exception as e:
         return json.dumps({"type": "props", "data": {"error": str(e)}})
@@ -233,15 +240,87 @@ def tool_dock_current() -> str:
             exhaustiveness=32,
         )
         data = {
-            "score": float(score),
-            "receptor_pdbqt": receptor_pdbqt,
-            "ligand_pdbqt": lig_pdbqt,
-            "center": [float(x) for x in docking_center],
-            "box_size": box_size,
+            "score": float(score)
         }
         return json.dumps({"type": "dock", "data": data})
     except Exception as e:
         return json.dumps({"type": "dock", "data": {"error": str(e)}})
+
+
+def _dock_ligand(reference_sdf: Optional[str],
+                  protein_pdb: str,
+                  ligand_sdf: Optional[str] = None,
+                  smiles: Optional[str] = None,
+                  score_only: bool = False,
+                  box_size: Optional[List[float]] = None,
+                  exhaustiveness: int = 32,
+                  n_poses: int = 5) -> dict:
+    """Lightweight docking wrapper for UI buttons; returns minimal score-only info."""
+    try:
+        from tools.docking import (
+            prep_receptor,
+            compute_center_from_ligand,
+            prep_ligand,
+            vina_dock,
+        )
+    except Exception as e:
+        return {"error": f"docking deps missing: {e}"}
+
+    if box_size is None:
+        box_size = [20, 20, 20]
+
+    if not ligand_sdf and not smiles:
+        return {"error": "Provide ligand_sdf or smiles"}
+
+    used_ligand_sdf = ligand_sdf
+
+    # If SMILES provided, build temporary SDF
+    if smiles and not ligand_sdf:
+        try:
+            from rdkit import Chem
+            from rdkit.Chem import AllChem
+            import tempfile
+            mol = Chem.MolFromSmiles(smiles)
+            if mol is None:
+                return {"error": "Invalid SMILES"}
+            mol = Chem.AddHs(mol)
+            params = AllChem.ETKDGv3()
+            params.randomSeed = 1337
+            res = AllChem.EmbedMolecule(mol, params)
+            if res != 0:
+                return {"error": "Failed to embed 3D from SMILES"}
+            try:
+                AllChem.MMFFOptimizeMolecule(mol)
+            except Exception:
+                pass
+            tmp_sdf = os.path.join(_app_temp_dir(), "ligand_from_smiles.sdf")
+            writer = Chem.SDWriter(tmp_sdf)
+            writer.write(mol)
+            writer.close()
+            used_ligand_sdf = tmp_sdf
+        except Exception as e:
+            return {"error": f"Failed to generate 3D from SMILES: {e}"}
+
+    try:
+        receptor_pdbqt = prep_receptor(protein_pdb, protein_pdb.replace(".pdb", ".pdbqt"))
+        # If no reference provided, center on ligand
+        center_ref = reference_sdf if reference_sdf else used_ligand_sdf
+        docking_center = compute_center_from_ligand(center_ref)
+        lig_pdbqt = used_ligand_sdf.replace(".sdf", ".pdbqt")
+        prep_ligand(used_ligand_sdf, lig_pdbqt)
+        score = vina_dock(
+            lig_pdbqt,
+            receptor_pdbqt,
+            docking_center,
+            box_size=box_size,
+            score_only=score_only,
+            n_poses=n_poses,
+            exhaustiveness=exhaustiveness,
+        )
+    except Exception as e:
+        return {"error": str(e)}
+
+    return {"score": float(score)}
 
 
 def build_tools():
