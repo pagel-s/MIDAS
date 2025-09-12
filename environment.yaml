@@ -1,4 +1,4 @@
-name: diffsbdd_restruct
+name: diffsbdd
 channels:
   - pyg
   - pytorch
