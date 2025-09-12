@@ -4,6 +4,7 @@ import torch
 import tempfile
 import os
 from rdkit import Chem
+import requests
 
 import torch
 from argparse import Namespace
@@ -126,7 +127,7 @@ def agent_send(user_message, history, pdb_state, ref_state):
         idx_best = int(max(range(len(file_paths)), key=lambda i: sizes[i])) if file_paths else 0
         viewer = gr.update(value=[pdb_path, file_paths[idx_best]], visible=True)
         slider = gr.update(visible=True, minimum=1, maximum=len(file_paths), value=idx_best + 1, step=1)
-        reply = f"Generated {len(file_paths)} molecule(s). Use the slider to browse; showing the largest complex."
+        reply = f"Generated {len(file_paths)} molecule(s). Use the slider to browse"
         new_hist = history + [(user_message, reply)]
         return new_hist, new_hist, viewer, slider, file_paths
 
@@ -182,37 +183,55 @@ def _get_selected_path(index, paths_state):
 def do_props(index, paths_state):
     path = _get_selected_path(index, paths_state)
     if not path or not os.path.exists(path):
-        return {"error": "No ligand selected"}
+        return gr.update(value={"error": "No ligand selected"}, visible=True)
     try:
         suppl = Chem.SDMolSupplier(path, removeHs=False)
         mols = [m for m in suppl if m is not None]
         if not mols:
-            return {"error": "Failed to read SDF"}
+            return gr.update(value={"error": "Failed to read SDF"}, visible=True)
         smiles = Chem.MolToSmiles(mols[0])
         props = calculate_properties(smiles)
         props["SMILES"] = smiles
-        return props
+        return gr.update(value=props, visible=True)
     except Exception as e:
-        return {"error": str(e)}
+        return gr.update(value={"error": str(e)}, visible=True)
 
 
 def do_similarity(index, paths_state):
     path = _get_selected_path(index, paths_state)
-    print("path:", path)
     if not path or not os.path.exists(path):
-        return {"error": "No ligand selected"}
+        return gr.update(value=[], visible=True)
     try:
         suppl = Chem.SDMolSupplier(path, removeHs=False)
         mols = [m for m in suppl if m is not None]
         if not mols:
-            return {"error": "Failed to read SDF"}
+            return gr.update(value=[], visible=True)
         smiles = Chem.MolToSmiles(mols[0])
-        print("smiles:", smiles)
         out = _pubchem_similarity(smiles, num_results=10, threshold=85)
-        print("out:", out)
-        return out
-    except Exception as e:
-        return {"error": str(e)}
+        results = out.get("results", []) if isinstance(out, dict) else []
+        items = []
+        for r in results[:10]:
+            cid = r.get("cid")
+            if cid is None:
+                continue
+            # Fetch canonical SMILES for the CID
+            smi = None
+            try:
+                prop_url = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/{cid}/property/CanonicalSMILES/JSON"
+                resp = requests.get(prop_url, timeout=20)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    props = data.get("PropertyTable", {}).get("Properties", [])
+                    if props:
+                        smi = props[0].get("CanonicalSMILES")
+            except Exception:
+                smi = None
+            img_url = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/{cid}/PNG?image_size=300x300"
+            caption = f"CID {cid}\n{(smi or '')}"
+            items.append([img_url, caption])
+        return gr.update(value=items, visible=True)
+    except Exception:
+        return gr.update(value=[], visible=True)
 
 
 def do_dock(index, pdb_state, ref_state, paths_state):
@@ -220,9 +239,9 @@ def do_dock(index, pdb_state, ref_state, paths_state):
     pdb_path = _normalize_path(pdb_state)
     ref_path = _normalize_path(ref_state)
     if not path or not os.path.exists(path):
-        return {"error": "No ligand selected"}
+        return gr.update(value={"error": "No ligand selected"}, visible=True)
     if not pdb_path or not os.path.exists(pdb_path):
-        return {"error": "No protein uploaded"}
+        return gr.update(value={"error": "No protein uploaded"}, visible=True)
     try:
         result = _dock_ligand(
             reference_sdf=ref_path,
@@ -231,9 +250,9 @@ def do_dock(index, pdb_state, ref_state, paths_state):
             smiles=None,
             score_only=False,
         )
-        return result
+        return gr.update(value=result, visible=True)
     except Exception as e:
-        return {"error": str(e)}
+        return gr.update(value={"error": str(e)}, visible=True)
 
 
 # -----------------------------
@@ -277,9 +296,9 @@ with gr.Blocks(css=css) as demo:
             sim_btn = gr.Button("PubChem Similarity")
             dock_btn = gr.Button("Dock")
 
-        props_json = gr.JSON(label="Properties")
-        sim_json = gr.JSON(label="Similarity")
-        dock_json = gr.JSON(label="Docking")
+        props_json = gr.JSON(label="Properties", visible=False)
+        sim_gallery = gr.Gallery(label="Similar molecules (CID + SMILES)", columns=5, height=340, visible=False)
+        dock_json = gr.JSON(label="Docking", visible=False)
 
         send_btn = gr.Button("Send")
 
@@ -316,7 +335,7 @@ with gr.Blocks(css=css) as demo:
         sim_btn.click(
             do_similarity,
             inputs=[ligand_selector, gen_paths_state],
-            outputs=[sim_json],
+            outputs=[sim_gallery],
         )
 
         dock_btn.click(

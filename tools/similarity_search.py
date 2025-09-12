@@ -1,14 +1,18 @@
 import subprocess
 import os
 import requests
+from urllib.parse import quote
 from rdkit import Chem
 from rdkit.Chem import AllChem
 import time
 import argparse
-import pubchempy as pcp
+try:
+    import pubchempy as pcp
+except Exception:
+    pcp = None
 
 
-def pubchem_similarity_search(smiles: str, num_results: int = 10, threshold: int = 10):
+def pubchem_similarity_search(smiles: str, num_results: int = 10, threshold: int = 85):
     """
     Perform a similarity search in PubChem using a SMILES string.
 
@@ -20,13 +24,31 @@ def pubchem_similarity_search(smiles: str, num_results: int = 10, threshold: int
     Returns:
         list: A list of PubChem CIDs for similar compounds.
     """
-    url = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/fastsimilarity_2d/smiles/{smiles}/cids/JSON?Threshold={threshold}&MaxRecords={num_results}"
-    response = requests.get(url)
-    if response.status_code == 200:
-        data = response.json()
-        cids = data.get("IdentifierList", {}).get("CID", [])
-        return cids
-    return []
+    # Canonicalize and URL-encode SMILES for reliable API calls
+    try:
+        mol = Chem.MolFromSmiles(smiles)
+        if mol is not None:
+            smiles = Chem.MolToSmiles(mol)
+    except Exception:
+        pass
+    enc = quote(smiles, safe="")
+
+    def _call(thr: int):
+        url = (
+            f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/fastsimilarity_2d/"
+            f"smiles/{enc}/cids/JSON?Threshold={thr}&MaxRecords={num_results}"
+        )
+        resp = requests.get(url, timeout=30)
+        if resp.status_code == 200:
+            data = resp.json()
+            return data.get("IdentifierList", {}).get("CID", [])
+        return []
+
+    cids = _call(threshold)
+    if not cids and threshold > 70:
+        # Try a slightly lower threshold if nothing found
+        cids = _call(70)
+    return cids
 
 def cids_to_inchi(cids: list) -> list:
     """
@@ -38,9 +60,14 @@ def cids_to_inchi(cids: list) -> list:
         list: List of InChI strings corresponding to the CIDs.
     """
     inchi_list = []
+    if pcp is None:
+        return [None for _ in cids]
     for cid in cids:
-        compound = pcp.Compound.from_cid(cid)
-        inchi_list.append(compound.inchi)
+        try:
+            compound = pcp.Compound.from_cid(cid)
+            inchi_list.append(getattr(compound, "inchi", None))
+        except Exception:
+            inchi_list.append(None)
     return inchi_list
 
 
