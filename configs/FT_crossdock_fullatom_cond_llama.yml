@@ -1,4 +1,4 @@
-run_name: 'all_text_embeddings_llama'
+run_name: 'real_all_embed_tinyllama'
 logdir: '/mnt/STORAGE3/sebastian2/data_hackathon/logs'
 wandb_params:
   mode: 'online'  # disabled, offline, online
@@ -64,4 +64,4 @@ eval_params:
 
 text_model_name: "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
 # text_csv: "./data/training_descriptions_mixed.csv"
-text_embeddings_path: "/mnt/STORAGE3/sebastian2/data_hackathon/data/all_embed_tinyllama.npz"
+text_embeddings_path: "/mnt/STORAGE3/sebastian2/data_hackathon/data/real_all_embed_tinyllama.npz"

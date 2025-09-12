@@ -375,7 +375,7 @@ css = """
 
 with gr.Blocks(css=css) as demo:
     # Title
-    gr.Markdown("<h1 style='text-align:center'>🧬 MIDAS - Agentic Molecule Generator</h1>", elem_classes="centered")
+    gr.Markdown("<h1 style='text-align:center'>🧬 MIDAS</h1>", elem_classes="centered")
 
     with gr.Column(elem_id="main-content", elem_classes="centered"):
         with gr.Row():
