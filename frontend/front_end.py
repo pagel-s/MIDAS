@@ -229,7 +229,7 @@ def do_dock(index, pdb_state, ref_state, paths_state):
             protein_pdb=pdb_path,
             ligand_sdf=path,
             smiles=None,
-            score_only=True,
+            score_only=False,
         )
         return result
     except Exception as e:
