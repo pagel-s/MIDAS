@@ -1,0 +1,39 @@
+# expansion:
+#   uspto:
+#     - /mnt/STORAGE3/alobo/MIDAS/tools/public_data/uspto_model.onnx
+#     - /mnt/STORAGE3/alobo/MIDAS/tools/public_data/uspto_templates.csv.gz
+#   ringbreaker:
+#     - /mnt/STORAGE3/alobo/MIDAS/tools/public_data/uspto_ringbreaker_model.onnx
+#     - /mnt/STORAGE3/alobo/MIDAS/tools/public_data/uspto_ringbreaker_templates.csv.gz
+# filter:
+#   uspto: /mnt/STORAGE3/alobo/MIDAS/tools/public_data/uspto_filter_model.onnx
+# stock:
+#   zinc: /mnt/STORAGE3/alobo/MIDAS/tools/public_data/zinc_stock.hdf5
+
+expansion:
+  uspto:
+    type: template-based
+    model: /mnt/STORAGE3/alobo/MIDAS/tools/public_data/uspto_model.onnx
+    template: /mnt/STORAGE3/alobo/MIDAS/tools/public_data/uspto_templates.csv.gz
+    template_column: retro_template
+    cutoff_cumulative: 0.995
+    cutoff_number: 50
+    use_rdchiral: true
+
+  ringbreaker:
+    type: template-based
+    model: /mnt/STORAGE3/alobo/MIDAS/tools/public_data/uspto_ringbreaker_model.onnx
+    template: /mnt/STORAGE3/alobo/MIDAS/tools/public_data/uspto_ringbreaker_templates.csv.gz
+    template_column: retro_template
+    cutoff_cumulative: 0.995
+    cutoff_number: 50
+    use_rdchiral: true
+
+filter:
+  uspto:
+    model: /mnt/STORAGE3/alobo/MIDAS/tools/public_data/uspto_filter_model.onnx
+
+stock:
+  zinc:
+    path: /mnt/STORAGE3/alobo/MIDAS/tools/public_data/zinc_stock.hdf5
+
