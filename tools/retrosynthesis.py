@@ -164,7 +164,24 @@ def run_retrosynthesis_images(smiles: str, output_dir: str = IMAGE_FOLDER, sub_i
     rxns = _collect_reaction_smiles_from_tree(tree_payload)
     saved_paths: List[str] = []
     counter = 0
-    for rxn in rxns:
+    for rxn in rxns[::-1]:
+        products = rxn.split(">>")[0].split(".")
+        reactants = rxn.split(">>")[1].split(".")
+
+        # remove atom mapping numbers
+        def remove_atom_mapping(smiles):
+            mol = Chem.MolFromSmiles(smiles)
+            for atom in mol.GetAtoms():
+                atom.SetAtomMapNum(0)
+            return Chem.MolToSmiles(mol)
+
+        products = [remove_atom_mapping(p) for p in products]
+        reactants = [remove_atom_mapping(r) for r in reactants]
+
+
+        # rejoing the reactants and products
+        rxn = ".".join(reactants) + ">>" + ".".join(products)
+        
         try:
             rxn_obj = rdChemReactions.ReactionFromSmarts(rxn, useSmiles=True)
             img = Draw.ReactionToImage(rxn_obj, subImgSize=sub_img_size)
