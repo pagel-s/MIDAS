@@ -83,19 +83,37 @@ model = load_model_using_config(CONFIG_YML, CKPT_PATH)
 # Minimal agent actions
 # -----------------------------
 
-def agent_send(user_message, history, pdb_state, ref_state):
+def agent_send(user_message, history, pdb_state, ref_state, slider_value, gen_paths_state):
     if not user_message:
-        return history, history, gr.update(), gr.update(), gr.update()
+        return (
+            history,
+            history,
+            gr.update(),  # out_view
+            gr.update(),  # ligand_selector
+            gr.update(),  # gen_paths_state
+            gr.update(visible=False),  # props_json
+            gr.update(visible=False),  # sim_gallery
+            gr.update(visible=False),  # dock_json
+        )
     pdb_path = _copy_to_tmp(pdb_state)
     ref_sdf = _copy_to_tmp(ref_state)
     text = (user_message or "").lower()
 
-    # Single tool: generate molecules when asked
+    # Generation request
     if any(k in text for k in ["generate", "design", "sample", "create"]):
         if not pdb_path or not os.path.exists(pdb_path):
             reply = "Please upload a protein PDB first."
             new_hist = history + [(user_message, reply)]
-            return new_hist, new_hist, gr.update(), gr.update(), gr.update()
+            return (
+                new_hist,
+                new_hist,
+                gr.update(),
+                gr.update(),
+                gr.update(),
+                gr.update(visible=False),
+                gr.update(visible=False),
+                gr.update(visible=False),
+            )
         result = _generate_ligands_tool(
             pdb_file=pdb_path,
             instructions=user_message,
@@ -109,13 +127,30 @@ def agent_send(user_message, history, pdb_state, ref_state):
         if "error" in result:
             reply = f"Generation failed: {result['error']}"
             new_hist = history + [(user_message, reply)]
-            return new_hist, new_hist, gr.update(), gr.update(), gr.update()
+            return (
+                new_hist,
+                new_hist,
+                gr.update(),
+                gr.update(),
+                gr.update(),
+                gr.update(visible=False),
+                gr.update(visible=False),
+                gr.update(visible=False),
+            )
         file_paths = result.get("generated_sdf_paths", [])
         if not file_paths:
             reply = "No molecules generated."
             new_hist = history + [(user_message, reply)]
-            return new_hist, new_hist, gr.update(), gr.update(), gr.update()
-        # choose largest
+            return (
+                new_hist,
+                new_hist,
+                gr.update(),
+                gr.update(),
+                gr.update(),
+                gr.update(visible=False),
+                gr.update(visible=False),
+                gr.update(visible=False),
+            )
         sizes = []
         for p in file_paths:
             try:
@@ -129,16 +164,54 @@ def agent_send(user_message, history, pdb_state, ref_state):
         slider = gr.update(visible=True, minimum=1, maximum=len(file_paths), value=idx_best + 1, step=1)
         reply = f"Generated {len(file_paths)} molecule(s). Use the slider to browse"
         new_hist = history + [(user_message, reply)]
-        return new_hist, new_hist, viewer, slider, file_paths
+        return (
+            new_hist,
+            new_hist,
+            viewer,
+            slider,
+            file_paths,
+            gr.update(visible=False),
+            gr.update(visible=False),
+            gr.update(visible=False),
+        )
 
-    # General chat fallback with context
+    # Derived actions using current selection
+    def _props():
+        return do_props(slider_value, gen_paths_state)
+
+    def _sim():
+        return do_similarity(slider_value, gen_paths_state)
+
+    def _dock():
+        return do_dock(slider_value, pdb_state, ref_state, gen_paths_state)
+
+    updated_props = gr.update(visible=False)
+    updated_sim = gr.update(visible=False)
+    updated_dock = gr.update(visible=False)
+
+    if any(k in text for k in ["property", "properties", "prop"]):
+        updated_props = _props()
+    if any(k in text for k in ["similar", "similarity", "pubchem"]):
+        updated_sim = _sim()
+    if any(k in text for k in ["dock", "docking"]):
+        updated_dock = _dock()
+
     context = f"Protein PDB file: {pdb_path}. Reference ligand SDF: {ref_sdf}. "
     try:
         reply = agent_route(context + user_message)
     except Exception as e:
         reply = f"Agent error: {e}"
     new_hist = history + [(user_message, reply)]
-    return new_hist, new_hist, gr.update(), gr.update(), gr.update()
+    return (
+        new_hist,
+        new_hist,
+        gr.update(),  # out_view unchanged
+        gr.update(),  # slider unchanged
+        gr.update(),  # gen_paths_state unchanged
+        updated_props,
+        updated_sim,
+        updated_dock,
+    )
 
 
 def on_pdb_upload(p):
@@ -316,8 +389,8 @@ with gr.Blocks(css=css) as demo:
 
         send_btn.click(
             agent_send,
-            inputs=[chat_input, chat_history, pdb_state, ref_state],
-            outputs=[chat, chat_history, out_view, ligand_selector, gen_paths_state],
+            inputs=[chat_input, chat_history, pdb_state, ref_state, ligand_selector, gen_paths_state],
+            outputs=[chat, chat_history, out_view, ligand_selector, gen_paths_state, props_json, sim_gallery, dock_json],
         ).then(lambda: "", None, [chat_input])
 
         ligand_selector.change(
