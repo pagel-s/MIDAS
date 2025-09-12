@@ -16,11 +16,15 @@ from rdkit.Chem import AllChem
 from rdkit.Chem import rdMolDescriptors
 from rdkit.Chem import QED
 
+from rdkit import RDConfig
+from PIL import Image, ImageDraw, ImageFont
+
 from rdkit import Chem
 from rdkit.Chem import Draw
 from rdkit import Chem
 from rdkit.Chem import Draw, ChemicalFeatures
 from rdkit import RDConfig
+from rdkit.Chem import rdCoordGen
 import os
 
 
@@ -44,7 +48,8 @@ def calculate_properties(smiles: str) -> dict:
 
 def draw_pharmacophore_features(smiles: str, output_path: str | None = None):
     """
-    Draw a molecule with automatically detected pharmacophore features highlighted.
+    Draw a molecule with automatically detected pharmacophore features highlighted,
+    including a legend for the colors. The molecule is centered in the final image.
 
     Parameters
     ----------
@@ -67,41 +72,73 @@ def draw_pharmacophore_features(smiles: str, output_path: str | None = None):
     if mol is None:
         raise ValueError(f"Invalid SMILES: {smiles}")
     mol = Chem.AddHs(mol)  # improve feature detection
-
+    rdCoordGen.AddCoords(mol)
+    
     # Load default pharmacophore feature definitions
     fdef_name = os.path.join(RDConfig.RDDataDir, "BaseFeatures.fdef")
     factory = ChemicalFeatures.BuildFeatureFactory(fdef_name)
     features = factory.GetFeaturesForMol(mol)
 
-    # Define colors for each feature type
-    colors = {
-        "Donor": (1.0, 0.4, 0.4),        # red
-        "Acceptor": (0.4, 0.4, 1.0),     # blue
-        "Aromatic": (0.8, 0.4, 0.8),     # purple
-        "PosIonizable": (0.4, 1.0, 0.4), # green
-        "NegIonizable": (1.0, 0.7, 0.2), # orange
-        "Hydrophobe": (0.6, 0.4, 0.2),   # brown
+    # Define colors and labels for each feature type
+    feature_definitions = {
+        "Donor": {"color": (1.0, 0.4, 0.4), "label": "HBD: Hydrogen Bond Donor"},
+        "Acceptor": {"color": (0.4, 0.4, 1.0), "label": "HBA: Hydrogen Bond Acceptor"},
+        "Aromatic": {"color": (0.8, 0.4, 0.8), "label": "Aromatic"},
+        "PosIonizable": {"color": (0.4, 1.0, 0.4), "label": "Positive Ionizable"},
+        "NegIonizable": {"color": (1.0, 0.7, 0.2), "label": "Negative Ionizable"},
+        "Hydrophobe": {"color": (0.6, 0.4, 0.2), "label": "Hydrophobe"},
     }
 
-    # Map atoms → feature colors
+    # Map atoms to feature colors
     highlight_atom_colors = {}
     for f in features:
         ftype = f.GetFamily()
-        if ftype not in colors:
-            continue
-        for idx in f.GetAtomIds():
-            highlight_atom_colors[idx] = colors[ftype]
+        if ftype in feature_definitions:
+            color = feature_definitions[ftype]["color"]
+            for idx in f.GetAtomIds():
+                highlight_atom_colors[idx] = color
 
-    # Draw molecule with highlighted features
-    img = Draw.MolsToGridImage(
+    mol_img_size = (500, 500)
+    mol_img = Draw.MolsToGridImage(
         [mol],
         highlightAtomLists=[list(highlight_atom_colors.keys())],
         highlightAtomColors=[highlight_atom_colors],
-        subImgSize=(300, 300)
+        subImgSize=mol_img_size,
+        useSVG=False
     )
+
+    legend_width = 250
+    legend_padding = 10
+    line_height = 25
+    font_size = 15
+    try:
+        font = ImageFont.truetype("arial.ttf", font_size)
+    except IOError:
+        font = ImageFont.load_default()
+
+    legend_height = len(feature_definitions) * line_height + 2 * legend_padding
+    legend_img = Image.new("RGB", (legend_width, mol_img_size[1]), "white")
+    draw = ImageDraw.Draw(legend_img)
+    y = legend_padding
+
+    for ftype, props in feature_definitions.items():
+        color = tuple(int(c * 255) for c in props["color"])
+        label = props["label"]
+        draw.rectangle([legend_padding, y, legend_padding + 15, y + 15], fill=color, outline="black")
+        draw.text((legend_padding + 25, y), label, fill="black", font=font)
+        y += line_height
+
+    # --- 3. Combine molecule and legend ---
+    total_width = mol_img.width + legend_width
+    final_img = Image.new("RGB", (total_width, mol_img.height), "white")
+    
+    # Paste the molecule image, ensuring it's centered in its allocated space
+    final_img.paste(mol_img, (0, 0))
+    final_img.paste(legend_img, (mol_img.width, 0))
+
     if output_path is None:
         output_path = "pharmacophore_features.png"
-    img.save(output_path)
+    final_img.save(output_path)
     return output_path
 
 
@@ -121,7 +158,3 @@ if __name__ == "__main__":
 
     # Draw pharmacophore features
     draw_pharmacophore_features(args.smiles)
-
-
-# examples of usage using smiles
-# python tools/prop_evaluation.py "CCOc1ccc2nc(S(N)(=O)=O)sc2c1"
