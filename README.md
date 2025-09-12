@@ -15,14 +15,11 @@ conda activate midas
 ### Pre-trained models
 Pre-trained models can be downloaded from [Zenodo](https://zenodo.org/record/8183747).
 - [CrossDocked, conditional $`C_\alpha`$ model](https://zenodo.org/record/8183747/files/crossdocked_ca_cond.ckpt?download=1)
-- [CrossDocked, joint $`C_\alpha`$ model](https://zenodo.org/record/8183747/files/crossdocked_ca_joint.ckpt?download=1)
-- [CrossDocked, conditional full-atom model](https://zenodo.org/record/8183747/files/crossdocked_fullatom_cond.ckpt?download=1)
-- [CrossDocked, joint full-atom model](https://zenodo.org/record/8183747/files/crossdocked_fullatom_joint.ckpt?download=1)
-- [Binding MOAD, conditional $`C_\alpha`$ model](https://zenodo.org/record/8183747/files/moad_ca_cond.ckpt?download=1)
-- [Binding MOAD, joint $`C_\alpha`$ model](https://zenodo.org/record/8183747/files/moad_ca_joint.ckpt?download=1)
-- [Binding MOAD, conditional full-atom model](https://zenodo.org/record/8183747/files/moad_fullatom_cond.ckpt?download=1)
-- [Binding MOAD, joint full-atom model](https://zenodo.org/record/8183747/files/moad_fullatom_joint.ckpt?download=1)
 
+```bash
+wget -P checkpoints/ https://zenodo.org/record/8183747/files/crossdocked_cond.ckpt
+```
+It will be stored in the `./checkpoints` folder.
 
 ### Instructions for MIDAS
 
@@ -102,6 +99,11 @@ python precompute_text_embeddings.py --text_csv /PATH/TO/OUTPUT/descriptons_sele
 python train.py --config configs/FT_crossdock_fullatom_cond.yml 
    --resume /PATH/TO/CHECKPOINT/crossdocked_ca_joint.ckpt
 ```
+
+Contributors:
+[Sebastian Pagel](https://github.com/pagel-s)
+[David Alobo](https://www.linkedin.com/in/david-obeh-alobo-418410a7/)
+[Michael Jirasek](https://michaeljirasek.com/)
 
 <details>
 # DiffSBDD: Structure-based Drug Design with Equivariant Diffusion Models

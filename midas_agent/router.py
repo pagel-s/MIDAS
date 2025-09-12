@@ -31,6 +31,13 @@ def _lazy_import_langchain():
 # -----------------------------
 # Tool wrappers
 # -----------------------------
+def _app_temp_dir() -> str:
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    tmpdir = os.path.join(repo_root, "tmp", "midas_agent")
+    os.makedirs(tmpdir, exist_ok=True)
+    return tmpdir
+
+
 def _calc_properties(smiles: str) -> dict:
     from tools.prop_evaluation import calculate_properties
     props = calculate_properties(smiles)
@@ -59,6 +66,61 @@ def _pubchem_similarity(smiles: str, num_results: int = 10, threshold: int = 85)
             "inchi": inchi_list[i] if i < len(inchi_list) else None,
         })
     return {"results": results}
+
+
+_MODEL_CACHE = {"model": None}
+
+def _get_model():
+    if _MODEL_CACHE["model"] is not None:
+        return _MODEL_CACHE["model"]
+    try:
+        from main import load_model_using_config
+        from config import CKPT_PATH, CONFIG_YML
+    except Exception as e:
+        raise RuntimeError(f"Failed to import model loader/config: {e}")
+    model = load_model_using_config(CONFIG_YML, CKPT_PATH)
+    _MODEL_CACHE["model"] = model
+    return model
+
+
+def _generate_ligands_tool(pdb_file: str,
+                            instructions: str,
+                            n_samples: int = 1,
+                            n_nodes_min: int = 15,
+                            ref_ligand: Optional[str] = None,
+                            sanitize: bool = True,
+                            largest_frag: bool = True,
+                            relax_iter: int = 200) -> dict:
+    try:
+        from rdkit import Chem
+        import torch
+    except Exception as e:
+        return {"error": f"Required deps missing (torch/rdkit): {e}"}
+
+    try:
+        model = _get_model()
+        with torch.no_grad():
+            molecules = model.generate_ligands(
+                pdb_file=pdb_file,
+                n_samples=int(n_samples),
+                text_description=instructions,
+                ref_ligand=ref_ligand,
+                sanitize=sanitize,
+                largest_frag=largest_frag,
+                relax_iter=int(relax_iter),
+                n_nodes_min=int(n_nodes_min),
+            )
+        file_paths = []
+        out_dir = _app_temp_dir()
+        for i, mol in enumerate(molecules):
+            save_path = os.path.join(out_dir, f"generated_ligand_{i}.sdf")
+            writer = Chem.SDWriter(save_path)
+            writer.write(mol)
+            writer.close()
+            file_paths.append(save_path)
+        return {"generated_sdf_paths": file_paths, "count": len(file_paths)}
+    except Exception as e:
+        return {"error": str(e)}
 
 
 def _dock_ligand(reference_sdf: str,
@@ -111,7 +173,7 @@ def _dock_ligand(reference_sdf: str,
                 AllChem.MMFFOptimizeMolecule(mol)
             except Exception:
                 pass
-            tmp_sdf = os.path.join(tempfile.gettempdir(), "ligand_from_smiles.sdf")
+            tmp_sdf = os.path.join(_app_temp_dir(), "ligand_from_smiles.sdf")
             writer = Chem.SDWriter(tmp_sdf)
             writer.write(mol)
             writer.close()
@@ -165,6 +227,16 @@ def build_tools():
         num_results: int = Field(10, description="Max number of similar compounds")
         threshold: int = Field(85, description="Similarity threshold (0-100)")
 
+    class GenerateLigandsInput(BaseModel):
+        pdb_file: str = Field(..., description="Path to protein PDB file")
+        instructions: str = Field(..., description="Text instructions for generation")
+        n_samples: int = Field(1, description="Number of ligands to generate")
+        n_nodes_min: int = Field(15, description="Minimum number of nodes in generated ligands")
+        ref_ligand: Optional[str] = Field(None, description="Optional reference ligand SDF path")
+        sanitize: bool = Field(True, description="Sanitize molecules")
+        largest_frag: bool = Field(True, description="Keep largest fragment only")
+        relax_iter: int = Field(200, description="Relaxation iterations")
+
     class DockLigandInput(BaseModel):
         reference_sdf: str = Field(..., description="Path to reference ligand SDF to set docking center")
         protein_pdb: str = Field(..., description="Path to protein PDB file")
@@ -193,6 +265,15 @@ def build_tools():
                 "Returns CIDs, optional InChI, and URLs."
             ),
             args_schema=PubChemSimilarityInput,
+        ),
+        StructuredTool.from_function(
+            func=_generate_ligands_tool,
+            name="generate_ligands",
+            description=(
+                "Generate ligands for a given protein PDB conditioned on text instructions. "
+                "Optionally provide a reference ligand SDF. Returns paths to generated SDF files."
+            ),
+            args_schema=GenerateLigandsInput,
         ),
         StructuredTool.from_function(
             func=_dock_ligand,

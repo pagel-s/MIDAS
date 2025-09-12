@@ -59,8 +59,7 @@ def load_model_using_config(config, ckpt_path=None):
         node_histogram=histogram,
         pocket_representation=args.pocket_representation,
         text_model_name=args.text_model_name,
-        text_embeddings_path=args.text_embeddings_path,
-        # text_csv=TEXT_CSV,
+        text_embeddings_path=args.text_embeddings_path
     )
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
