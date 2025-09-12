@@ -10,7 +10,7 @@ from rich.progress import track
 import numpy as np
 from vina import Vina
 
-from tools import generate_molecules, convert_to_3D
+# Note: generate_molecules/convert_to_3D are not used here; remove stale import
 
 
 def prep_receptor(inputfile, outputfile):

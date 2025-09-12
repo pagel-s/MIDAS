@@ -13,12 +13,20 @@ dependencies:
       - transformers
       - exmol
       - openai
+      - langchain==0.2.16
+      - langchain-openai==0.1.23
+      - pydantic>=2.0.0
       - torch==2.4.1
       - "torch-scatter -f https://data.pyg.org/whl/torch-2.4.1+cu121.html"
       - pytorch-lightning==1.9.2
       - ipykernel
       - wandb==0.13.1
       - einops==0.8.1
+      - gradio==5.45.0
+      - umap-learn==0.5.6
+      - gradio_molecule3d==0.0.7
+      - vina==1.2.7
+      - pubchempy
   - rdkit=2025.3.6
   - biopython=1.79
   - imageio=2.21.2
