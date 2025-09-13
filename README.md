@@ -3,7 +3,7 @@
   <img src="img/midas.png" width="50%">
 </p>
 
-|A temporary live demo can be found [here](https://ac4c34a092df96309b.gradio.live)
+|A temporary live demo can be found [here](https://c32f46f89a6d0b5a1f.gradio.live)
 
 ### Conda environment
 
