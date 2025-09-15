@@ -1,10 +1,10 @@
-# MIDAS
+# MIDAS: Language Controlled Molecular Design, and Analysis
 <p align="center">
   <img src="img/midas.png" width="50%">
 </p>
 
-### Give it a try here:
-|A temporary live demo can be found [here](https://751ca8e0aa2352ad33.gradio.live/)
+### Give it a try:
+|A live demo can be found [here](https://751ca8e0aa2352ad33.gradio.live/)
 
 ### Conda environment
 
