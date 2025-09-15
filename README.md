@@ -134,8 +134,8 @@ python train.py --config configs/ckpt.yml
    --resume /PATH/TO/CHECKPOINT/ckpt.ckpt
 ```
 
-### Finetuned Model:
-Structure-based Drug Design with Equivariant Diffusion Models [details](https://github.com/arneschneuing/DiffSBDD)
+### Structure Based Diffusion Model & Model Code:
+The code for training and model architecture was adapted from [DiffSBDD](https://github.com/arneschneuing/DiffSBDD), and extended with a text conditioning module.
 
 ### Contributors:
 [Sebastian Pagel](https://github.com/pagel-s)
