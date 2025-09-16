@@ -49,7 +49,7 @@ The front end will automatically use the API key from the `OPENAI_API_KEY
 ## To recreate the dataset generation, and model trainig following these instructions:
 
 <p align="center">
-  <img src="img/training_figure.png" width="60%">
+  <img src="img/training_figure.png" width="75%">
 </p>
 
 ### Pre-trained models
