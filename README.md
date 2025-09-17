@@ -1,6 +1,6 @@
 # MIDAS: Language Controlled Molecular Design, and Analysis
 <p align="center">
-  <img src="img/concept.png" width="70%">
+  <img src="img/conept.png" width="70%">
 </p>
 
 ### Give it a try:
