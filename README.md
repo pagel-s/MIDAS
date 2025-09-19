@@ -4,7 +4,7 @@
 </p>
 
 ### Give it a try:
-|A live demo can be found [here](https://751ca8e0aa2352ad33.gradio.live/)
+|A live demo can be found [here](https://9dfabda19417935be1.gradio.live)
 
 ### Conda environment
 
