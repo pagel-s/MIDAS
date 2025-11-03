@@ -387,62 +387,88 @@ css = """
 }
 """
 
+# Path to example files
+EXAMPLE_PDB = os.path.join(REPO_ROOT, "example", "3rfm.pdb")
+EXAMPLE_SDF = os.path.join(REPO_ROOT, "example", "3rfm_B_CFF.sdf")
+
+def load_example_files():
+    pdb_path = _copy_to_tmp(EXAMPLE_PDB)
+    sdf_path = _copy_to_tmp(EXAMPLE_SDF)
+    return gr.update(value=[pdb_path], visible=True), pdb_path, sdf_path
+
+
 with gr.Blocks(css=css) as demo:
-    # Title
+    # Title and Load Example button
     gr.Markdown("<h1 style='text-align:center'>🧬 MIDAS</h1>", elem_classes="centered")
+    with gr.Row():
+        load_example_btn = gr.Button("Load Example")
 
     with gr.Column(elem_id="main-content", elem_classes="centered"):
         with gr.Row():
             pdb_inp = gr.File(label="Upload Protein PDB File", type="filepath", file_types=[".pdb"])
-            ref_inp = gr.File(label="Upload Reference Ligand (optional)", type="filepath", file_types=[".sdf"])
+            ref_inp = gr.File(label="Upload bound reference Ligand (SDF)", type="filepath", file_types=[".sdf"])
 
         out_view = Molecule3D(label="Protein / Complex", reps=reps, visible=False)
 
-        chat = gr.Chatbot(height=300)
-        chat_input = gr.Textbox(label="Chat with Agent", placeholder="Describe the molecule to generate, or ask questions...")
-        chat_history = gr.State([])
-        pdb_state = gr.State("")
-        ref_state = gr.State("")
-        gen_paths_state = gr.State([])
 
-        ligand_selector = gr.Slider(label="Select Generated Ligand", minimum=1, maximum=1, value=1, step=1, visible=False)
+    chat = gr.Chatbot(height=300)
+    chat_input = gr.Textbox(label="Chat with Agent", placeholder="Describe the molecule to generate, or ask questions...")
+    # Example prompts under chat box
+    gr.Markdown("""
+**Example prompts:**
+1. Generate a molecule with low logP and multiple hydrogen bond acceptors.
+2. Show similar molecules to the displayed ligand.
+3. Calculate properties for the displayed ligand.
+4. Score the binding pose of the displayed ligand.
+5. Suggest a synthetic route for this molecule.
+""")
 
-        # with gr.Row():
-        #     props_btn = gr.Button("Properties")
-        #     sim_btn = gr.Button("PubChem Similarity")
-        #     dock_btn = gr.Button("Dock")
+    chat_history = gr.State([])
+    pdb_state = gr.State("")
+    ref_state = gr.State("")
+    gen_paths_state = gr.State([])
 
-        props_json = gr.JSON(label="Properties", visible=False)
-        props_img = gr.Image(label="Pharmacophore", visible=False)
-        sim_gallery = gr.Gallery(label="Similar molecules (CID + SMILES)", columns=5, height=340, visible=False)
-        dock_json = gr.JSON(label="Docking", visible=False)
-        retro_gallery = gr.Gallery(label="Retrosynthesis routes", columns=2, height=340, visible=False)
+    ligand_selector = gr.Slider(label="Select Generated Ligand", minimum=1, maximum=1, value=1, step=1, visible=False)
 
-        send_btn = gr.Button("Send")
+    props_json = gr.JSON(label="Properties", visible=False)
+    props_img = gr.Image(label="Pharmacophore", visible=False)
+    sim_gallery = gr.Gallery(label="Similar molecules (CID + SMILES)", columns=5, height=340, visible=False)
+    dock_json = gr.JSON(label="Docking", visible=False)
+    retro_gallery = gr.Gallery(label="Retrosynthesis routes", columns=2, height=340, visible=False)
 
-        pdb_inp.change(
-            on_pdb_upload,
-            inputs=[pdb_inp],
-            outputs=[out_view, pdb_state],
-        )
+    send_btn = gr.Button("Send")
 
-        ref_inp.change(
-            on_ref_upload,
-            inputs=[ref_inp],
-            outputs=[ref_state],
-        )
+    # Load Example button logic
+    load_example_btn.click(
+        load_example_files,
+        inputs=[],
+        outputs=[out_view, pdb_state, ref_state],
+    )
 
-        send_btn.click(
-            agent_send,
-            inputs=[chat_input, chat_history, pdb_state, ref_state, ligand_selector, gen_paths_state],
-            outputs=[chat, chat_history, out_view, ligand_selector, gen_paths_state, props_json, sim_gallery, dock_json, props_img, retro_gallery],
-        ).then(lambda: "", None, [chat_input])
+    pdb_inp.change(
+        on_pdb_upload,
+        inputs=[pdb_inp],
+        outputs=[out_view, pdb_state],
+    )
 
-        ligand_selector.change(
-            on_slider_change,
-            inputs=[ligand_selector, pdb_state, gen_paths_state],
-            outputs=[out_view],
-        )
+    ref_inp.change(
+        on_ref_upload,
+        inputs=[ref_inp],
+        outputs=[ref_state],
+    )
+
+
+    send_btn.click(
+        agent_send,
+        inputs=[chat_input, chat_history, pdb_state, ref_state, ligand_selector, gen_paths_state],
+        outputs=[chat, chat_history, out_view, ligand_selector, gen_paths_state, props_json, sim_gallery, dock_json, props_img, retro_gallery],
+    ).then(lambda: "", None, [chat_input])
+
+    ligand_selector.change(
+        on_slider_change,
+        inputs=[ligand_selector, pdb_state, gen_paths_state],
+        outputs=[out_view],
+    )
 
         # props_btn.click(
         #     do_props,
@@ -467,4 +493,4 @@ with gr.Blocks(css=css) as demo:
         # )
 
 if __name__ == "__main__":
-    demo.launch()
+    demo.launch(share=True)

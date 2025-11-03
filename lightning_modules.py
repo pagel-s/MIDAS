@@ -60,6 +60,7 @@ class LigandPocketDDPM(pl.LightningModule):
             pocket_representation='CA',
             virtual_nodes=False,
             text_model_name=None,
+            ft_top_k=0,
             text_csv=None,
             text_embeddings_path=None
     ):
@@ -145,6 +146,7 @@ class LigandPocketDDPM(pl.LightningModule):
         
         # Text conditioning (optional)
         self.text_model_name = text_model_name
+        self.text_finetune_top_k = ft_top_k
         self.text_embedder = None
         self.text_film_atoms = None
         self.text_film_res = None
@@ -207,8 +209,22 @@ class LigandPocketDDPM(pl.LightningModule):
                     cond_dim = f['embedding_dim']
             else:
                 # Initialize text embedder for on-the-fly computation
-                self.text_embedder = TextEmbeddingModel.get(self.text_model_name, device=self.device)
+                self.text_embedder = TextEmbeddingModel.get(self.text_model_name, device=self.device, finetune_top_k=self.text_finetune_top_k)
                 cond_dim = self.text_embedder.embedding_dim
+
+            try:
+                if hasattr(self.text_embedder, 'model') and isinstance(self.text_embedder.model, torch.nn.Module):
+                    # assign to an attribute to register
+                    self.text_embedder_model = self.text_embedder.model
+                    # Ensure module is registered with Lightning (add_module is safe if already registered)
+                    self.add_module('text_embedder_model', self.text_embedder_model)
+                    # Ensure it is moved to the LightningModule device
+                    try:
+                        self.text_embedder_model.to(self.device)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
             
             # Initialize FiLM layers
             hidden = self.ddpm.dynamics.atom_encoder[2].out_features
@@ -222,8 +238,18 @@ class LigandPocketDDPM(pl.LightningModule):
             ).to(self.device)
 
     def configure_optimizers(self):
-        return torch.optim.AdamW(self.ddpm.parameters(), lr=self.lr,
-                                 amsgrad=True, weight_decay=1e-12)
+        # Include text embedder parameters if any are trainable (for finetuning top-k layers)
+        params = list(self.ddpm.parameters())
+        if self.text_embedder is not None:
+            try:
+                text_params = [p for n, p in self.text_embedder.model.named_parameters() if p.requires_grad]
+            except Exception:
+                # If the embedder API changes, fall back to model.parameters()
+                text_params = [p for p in self.text_embedder.model.parameters() if p.requires_grad]
+            if len(text_params) > 0:
+                params += text_params
+
+        return torch.optim.AdamW(params, lr=self.lr, amsgrad=True, weight_decay=1e-12)
 
     def setup(self, stage: Optional[str] = None):
         if stage == 'fit':
@@ -294,15 +320,30 @@ class LigandPocketDDPM(pl.LightningModule):
         #     ).to(self.device)
 
     def _load_name_to_text(self, csv_path):
+        """Load a CSV mapping `name` -> `text`.
+
+        Supports multiple rows per name. If multiple descriptions exist for the
+        same name, the mapping will contain a list of texts for that name. If
+        only one entry exists the value will be a list with a single string.
+        """
         import csv
-        mapping = {}
+        from collections import defaultdict
+
+        mapping = defaultdict(list)
         with open(csv_path, newline='') as f:
             reader = csv.DictReader(f)
             assert 'name' in reader.fieldnames and 'text' in reader.fieldnames, \
                 "CSV must contain 'name' and 'text' columns"
             for row in reader:
-                mapping[row['name']] = row['text']
-        return mapping
+                name = row['name']
+                text = row['text']
+                # skip empty text entries
+                if text is None:
+                    continue
+                mapping[name].append(text)
+
+        # Convert defaultdict to plain dict; keep lists (possibly length 1)
+        return dict(mapping)
 
     def train_dataloader(self):
         return DataLoader(self.train_dataset, self.batch_size, shuffle=True,
@@ -352,8 +393,18 @@ class LigandPocketDDPM(pl.LightningModule):
             elif 'text_description' in data:
                 # Use on-the-fly text descriptions (legacy)
                 texts = data['text_description']
-                with torch.no_grad():
-                    cond_vec = self.text_embedder.encode(texts)  # (B, D)
+                # Compute embeddings with gradients during training only when finetuning top-k layers
+                use_grad = (self.text_finetune_top_k > 0) and self.training and (self.text_embedder is not None)
+                if use_grad:
+                    # ensure the embedder is in train mode so dropout etc. behave correctly
+                    try:
+                        self.text_embedder.model.train()
+                    except Exception:
+                        pass
+                    cond_vec = self.text_embedder.encode(texts, with_grad=True)  # (B, D)
+                else:
+                    with torch.no_grad():
+                        cond_vec = self.text_embedder.encode(texts, with_grad=False)  # (B, D)
                 cond_vec = cond_vec.to(self.device)
             else:
                 # No text conditioning
@@ -362,7 +413,7 @@ class LigandPocketDDPM(pl.LightningModule):
             if cond_vec is not None:
                 gamma_beta_atoms = self.text_film_atoms(cond_vec)
                 gamma_beta_res = self.text_film_res(cond_vec)
-                # Split gamma and beta
+
                 gamma_atoms, beta_atoms = gamma_beta_atoms.chunk(2, dim=-1)
                 gamma_res, beta_res = gamma_beta_res.chunk(2, dim=-1)
                 self.ddpm.dynamics._cond_film = {
@@ -954,7 +1005,7 @@ class LigandPocketDDPM(pl.LightningModule):
         if self.text_model_name is not None and text_description is not None:
             # Ensure embedder and FiLM heads are initialized
             if self.text_embedder is None:
-                self.text_embedder = TextEmbeddingModel.get(self.text_model_name, device=self.device)
+                self.text_embedder = TextEmbeddingModel.get(self.text_model_name, device=self.device, finetune_top_k=self.text_finetune_top_k)
 
 
             if isinstance(text_description, str):
@@ -964,8 +1015,18 @@ class LigandPocketDDPM(pl.LightningModule):
                     "Provide one text per sample or a single string."
                 texts = text_description
 
-            with torch.no_grad():
-                cond_vec = self.text_embedder.encode(texts)  # (B, D)
+            # For inference we keep no_grad; if this is called during training and finetuning is enabled,
+            # the encode method will be called with gradients enabled by the same condition.
+            use_grad = (self.text_finetune_top_k > 0) and self.training and (self.text_embedder is not None)
+            if use_grad:
+                try:
+                    self.text_embedder.model.train()
+                except Exception:
+                    pass
+                cond_vec = self.text_embedder.encode(texts, with_grad=True)  # (B, D)
+            else:
+                with torch.no_grad():
+                    cond_vec = self.text_embedder.encode(texts, with_grad=False)  # (B, D)
             gamma_beta_atoms = self.text_film_atoms(cond_vec)
             gamma_beta_res = self.text_film_res(cond_vec)
             gamma_atoms, beta_atoms = gamma_beta_atoms.chunk(2, dim=-1)
@@ -1067,6 +1128,77 @@ class LigandPocketDDPM(pl.LightningModule):
         if float(grad_norm) > max_grad_norm:
             print(f'Clipped gradient with value {grad_norm:.1f} '
                   f'while allowed {max_grad_norm:.1f}')
+
+    def on_after_backward(self) -> None:
+        """Lightning hook executed after backward; report text-embedder gradients.
+
+        Prints a compact summary of which trainable parameters in the
+        HuggingFace text model received gradients and the top gradient norms.
+        This helps verify that finetuning of the top-k layers is actually
+        receiving gradients during training.
+        """
+        try:
+            is_global_zero = getattr(self.trainer, "is_global_zero", True)
+        except Exception:
+            is_global_zero = True
+        # Avoid noisy logs in distributed training; only report on main process
+        if not is_global_zero:
+            return
+
+        if getattr(self, "text_embedder", None) is None:
+            return
+
+        model = getattr(self.text_embedder, "model", None)
+        if model is None:
+            return
+
+        total_params = 0
+        none_grads = 0
+        zero_norm = 0
+        nonzero = []
+        for name, p in model.named_parameters():
+            if not p.requires_grad:
+                continue
+            total_params += 1
+            if p.grad is None:
+                none_grads += 1
+                continue
+            try:
+                gnorm = float(p.grad.detach().cpu().norm().item())
+            except Exception:
+                gnorm = 0.0
+            if gnorm == 0.0:
+                zero_norm += 1
+            else:
+                nonzero.append((name, gnorm))
+
+        nonzero.sort(key=lambda x: x[1], reverse=True)
+        # print(f"[text-embedder grads] trainable params={total_params}, grad None={none_grads}, zero-norm={zero_norm}, nonzero={len(nonzero)}")
+        # for n, g in nonzero[:10]:
+        #     print(f"  {n} grad-norm={g:.3e}")
+        # if len(nonzero) == 0:
+        #     print("  No non-zero gradients observed for text embedder in this step.")
+
+    def on_train_end(self) -> None:
+        """Lightning hook called at the end of training. Save text embedder if finetuning was active.
+
+        This saves the HuggingFace model and tokenizer to <outdir>/text_embedder (created if needed).
+        Only runs on the global rank zero process to avoid duplicate writes in distributed training.
+        """
+        try:
+            # Only save on main process
+            if hasattr(self, 'trainer') and getattr(self.trainer, 'is_global_zero', True) is False:
+                return
+        except Exception:
+            pass
+
+        if self.text_finetune_top_k and self.text_embedder is not None:
+            save_dir = Path(self.outdir, 'text_embedder')
+            try:
+                self.text_embedder.save_pretrained(str(save_dir))
+                print(f"Saved fine-tuned text embedder to {save_dir}")
+            except Exception as e:
+                print(f"Failed to save text embedder: {e}")
 
 
 class WeightSchedule:

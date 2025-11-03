@@ -85,7 +85,12 @@ class ProcessedLigandPocketDataset(Dataset):
                 data['text_embedding'] = torch.zeros(self.text_embeddings.shape[1])
         elif self.text_descriptions is not None:
             # Use on-the-fly text descriptions (legacy)
-            data['text_description'] = self.text_descriptions[idx]
+            desc = self.text_descriptions[idx]
+            # If multiple descriptions are available for this item, sample one at random
+            if isinstance(desc, (list, tuple, np.ndarray)):
+                data['text_description'] = random.choice(list(desc))
+            else:
+                data['text_description'] = desc
             
         if self.transform is not None:
             data = self.transform(data)

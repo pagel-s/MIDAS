@@ -27,6 +27,7 @@ dependencies:
       - gradio_molecule3d==0.0.7
       - vina==1.2.7
       - pubchempy
+      - pytest
   - rdkit=2025.3.6
   - biopython=1.79
   - imageio=2.21.2

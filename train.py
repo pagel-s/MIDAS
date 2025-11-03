@@ -12,6 +12,16 @@ from lightning_modules import LigandPocketDDPM
 
 
 def merge_args_and_yaml(args, config_dict):
+    """Merge command line args Namespace with config dictionary from YAML.
+    Prioritizes config_dict values, issuing warnings if any args are overwritten.
+
+    Args:
+        args (Namespace): Command line arguments.
+        config_dict (dict): Configuration dictionary from YAML.
+
+    Returns:
+        Namespace: Merged arguments.
+    """
     arg_dict = args.__dict__
     for key, value in config_dict.items():
         if key in arg_dict:
@@ -55,6 +65,12 @@ if __name__ == "__main__":
 
     with open(args.config, 'r') as f:
         config = yaml.safe_load(f)
+    if "text_embeddings_path" in config:
+        args.text_embeddings_path = config["text_embeddings_path"]
+    if "text_csv" in config:
+        args.text_csv = config["text_csv"]
+    if "text_model_name" in config:
+        args.text_model_name = config["text_model_name"]
 
     assert 'resume' not in config
 
@@ -96,6 +112,7 @@ if __name__ == "__main__":
         node_histogram=histogram,
         pocket_representation=args.pocket_representation,
         text_model_name=args.text_model_name,
+        ft_top_k=getattr(args, 'ft_top_k', 0),
         text_csv=args.text_csv,
         text_embeddings_path=args.text_embeddings_path
     )
