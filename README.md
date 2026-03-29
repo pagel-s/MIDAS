@@ -3,8 +3,8 @@
   <img src="img/conept.png" width="70%">
 </p>
 
-### Give it a try:
-|A live demo can be found [here](https://9dfabda19417935be1.gradio.live)
+### DEMO | Give it a try:
+|A live demo can be found [here](https://17b3826e3f00b18239.gradio.live/)
 
 ### Conda environment
 
